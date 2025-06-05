@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Active Jobs – Worker Dashboard</title>
+  <link rel="stylesheet" href="main.css" />
+  <!-- QRious for inline QR code generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+  <style>
+    /* Simple grid layout for job cards */
+    .jobs-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      grid-gap: 1rem;
+      margin-top: 1rem;
+    }
+    .job-card {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: #fafafa;
+    }
+    .job-info p {
+      margin: 0.2rem 0;
+      font-size: 0.9rem;
+    }
+    .job-footer {
+      margin-top: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .job-footer a {
+      text-decoration: none;
+      color: white;
+      background: #007bff;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .job-footer a:disabled {
+      background: #aaa;
+    }
+    .qr-mini {
+      width: 64px;
+      height: 64px;
+    }
+
+    /* Header styling */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      border-bottom: 1px solid #ccc;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    header .user-display {
+      font-size: 0.95rem;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header: who’s logged in + “Log Out” -->
+  <header>
+    <h1>Active Jobs</h1>
+    <div>
+      <span class="user-display">
+        Logged in as: <strong id="user-display"></strong>
+      </span>
+      <button id="logout-btn" style="margin-left: 1rem; font-size: 0.9rem;">
+        Log Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Container for job cards -->
+  <main>
+    <div id="jobs-container" class="jobs-container">
+      <!-- JS will append <div class="job-card">…</div> for each active job -->
+    </div>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import {
+      getFirestore,
+      collection,
+      query,
+      where,
+      getDocs
+    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBdxcEzQNH53JLsjI2uo-oApXFLZ5NzxGE",
+      authDomain: "sc-deburring-job-view-2d546.firebaseapp.com",
+      databaseURL: "https://sc-deburring-job-view-2d546-default-rtdb.firebaseio.com",
+      projectId: "sc-deburring-job-view-2d546",
+      storageBucket: "sc-deburring-job-view-2d546.firebasestorage.app",
+      messagingSenderId: "364676812827",
+      appId: "1:364676812827:web:6b0c694a050e6bac0228be"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const userDisplay = document.getElementById('user-display');
+    const logoutBtn = document.getElementById('logout-btn');
+    const jobsContainer = document.getElementById('jobs-container');
+
+    // Require “currentUser” in localStorage → if absent, redirect to login
+    const currentUser = localStorage.getItem('currentUser');
+    if (!currentUser) {
+      window.location.href = 'index.html';
+    }
+    userDisplay.textContent = currentUser;
+
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('currentUser');
+      window.location.href = 'index.html';
+    });
+
+    // Fetch & render all “active” jobs
+    async function loadActiveJobs() {
+      try {
+        const jobsCol = collection(db, 'jobs');
+        const q = query(jobsCol, where('active', '==', true));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          const emptyMsg = document.createElement('p');
+          emptyMsg.textContent = 'No active jobs at the moment.';
+          emptyMsg.style.margin = '2rem';
+          emptyMsg.style.color = '#555';
+          jobsContainer.appendChild(emptyMsg);
+          return;
+        }
+
+        snapshot.forEach((docSnap) => {
+          const jobId = docSnap.id;
+          const data = docSnap.data();
+
+          const card = document.createElement('div');
+          card.className = 'job-card';
+
+          const infoDiv = document.createElement('div');
+          infoDiv.className = 'job-info';
+          infoDiv.innerHTML = `
+            <p><strong>Job ID:</strong> ${jobId}</p>
+            <p><strong>PO #:</strong> ${data.poNumber || '—'}</p>
+            <p><strong>Job #:</strong> ${data.jobNumber || '—'}</p>
+            <p><strong>Part #:</strong> ${data.partNumber || '—'}</p>
+            <p><strong>Qty:</strong> ${data.quantity || '—'}</p>
+            <p><strong>Due:</strong> ${new Date(data.dueDate).toLocaleDateString()}</p>
+          `;
+          card.appendChild(infoDiv);
+
+          const footer = document.createElement('div');
+          footer.className = 'job-footer';
+
+          // “Open Job” link → goes back to index.html but passes jobId as ?jobId=
+          const link = document.createElement('a');
+          link.href = `index.html?jobId=${encodeURIComponent(jobId)}`;
+          link.textContent = 'Open Job';
+          link.title = 'Click to select operation & log time';
+          footer.appendChild(link);
+
+          const canvas = document.createElement('canvas');
+          canvas.className = 'qr-mini';
+          footer.appendChild(canvas);
+
+          card.appendChild(footer);
+          jobsContainer.appendChild(card);
+
+          new QRious({
+            element: canvas,
+            value: `${window.location.origin}/index.html?jobId=${encodeURIComponent(jobId)}`,
+            size: 64
+          });
+        });
+      } catch (err) {
+        console.error('Error loading active jobs:', err);
+        const errMsg = document.createElement('p');
+        errMsg.textContent = 'Failed to load jobs. Please refresh.';
+        errMsg.style.color = 'red';
+        jobsContainer.appendChild(errMsg);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadActiveJobs();
+    });
+  </script>
+</body>
+</html>

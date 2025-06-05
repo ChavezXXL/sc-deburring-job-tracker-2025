@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SC Deburring – Job Details</title>
+  <link rel="stylesheet" href="main.css" />
+
+  <!-- Firebase & Firestore SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js"></script>
+</head>
+<body>
+  <!-- ──────────────────────────────────────────────────────────────────────────────── -->
+  <!-- JOB DETAILS AND OPERATION SECTION                                            -->
+  <!-- ──────────────────────────────────────────────────────────────────────────────── -->
+  <div id="job-section" class="section hidden">
+    <div class="flex-row space-between align-center mb-2">
+      <h2 class="heading">
+        Job: <span id="job-id-display"></span>
+      </h2>
+      <div class="flex-row align-center">
+        <span>
+          Welcome, <strong id="worker-name"></strong>
+        </span>
+        <button id="logout-btn" class="btn btn-danger ml-2">
+          Logout
+        </button>
+      </div>
+    </div>
+
+    <!-- Job Details -->
+    <div id="job-details" class="job-details mb-3">
+      <!-- Filled by JS: PO Number, Job Number, Part Number, Quantity, Due Date, etc. -->
+    </div>
+
+    <!-- Operation Selection Panel -->
+    <div id="operation-section" class="section">
+      <h3 class="subheading">Select Operation</h3>
+      <div class="form-group">
+        <label for="operation-select">Operation</label>
+        <select id="operation-select" class="form-control">
+          <option value="cut">Cut</option>
+          <option value="buff">Buff</option>
+          <option value="pack">Pack</option>
+        </select>
+      </div>
+      <button id="start-operation-btn" class="btn btn-primary">
+        Start Operation
+      </button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      addDoc,
+      collection,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+    // ── A) Firebase config ──
+    const firebaseConfig = {
+      apiKey: "AIzaSyBdxcEzQNH53JLsjI2uo-oApXFLZ5NzxGE",
+      authDomain: "sc-deburring-job-view-2d546.firebaseapp.com",
+      databaseURL: "https://sc-deburring-job-view-2d546-default-rtdb.firebaseio.com",
+      projectId: "sc-deburring-job-view-2d546",
+      storageBucket: "sc-deburring-job-view-2d546.firebasestorage.app",
+      messagingSenderId: "364676812827",
+      appId: "1:364676812827:web:6b0c694a050e6bac0228be"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // ── B) DOM references ──
+    const jobSection = document.getElementById('job-section');
+    const jobIdDisplay = document.getElementById('job-id-display');
+    const workerNameEl = document.getElementById('worker-name');
+    const logoutBtn = document.getElementById('logout-btn');
+    const jobDetailsDiv = document.getElementById('job-details');
+    const operationSelect = document.getElementById('operation-select');
+    const startOperationBtn = document.getElementById('start-operation-btn');
+
+    let currentUser = null;
+    let jobId = null;
+
+    // ── C) Check for logged-in user ──
+    function requireLogin() {
+      const stored = localStorage.getItem('currentUser');
+      if (!stored) {
+        // Not logged in → go back to index.html
+        window.location.href = 'index.html';
+        return null;
+      }
+      return stored;
+    }
+
+    // ── D) Logout handler ──
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('currentUser');
+      window.location.href = 'index.html';
+    });
+
+    // ── E) Parse jobId from URL ──
+    function getJobIdFromURL() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('jobId');
+    }
+
+    // ── F) Fetch job details from Firestore ──
+    async function loadJobDetails(jobId) {
+      try {
+        const jobRef = doc(db, 'jobs', jobId);
+        const jobSnap = await getDoc(jobRef);
+        if (!jobSnap.exists()) {
+          jobDetailsDiv.innerHTML = '<p style="color:red;">Job not found.</p>';
+          startOperationBtn.disabled = true;
+          return;
+        }
+        const data = jobSnap.data();
+        // Build HTML with PO, Job No, Part No, Qty, Due Date, Received Date, Hot/Active
+        const dueFormatted = data.dueDate
+          ? new Date(data.dueDate).toLocaleDateString()
+          : '—';
+        const recFormatted = data.receivedDate
+          ? new Date(data.receivedDate).toLocaleDateString()
+          : '—';
+        const hotText = data.hotOrder ? 'Yes' : 'No';
+        const activeText = data.active ? 'Yes' : 'No';
+
+        jobDetailsDiv.innerHTML = `
+          <div class="job-details">
+            <p><strong>PO Number:</strong> ${data.poNumber || '—'}</p>
+            <p><strong>Job Number:</strong> ${data.jobNumber || '—'}</p>
+            <p><strong>Part Number:</strong> ${data.partNumber || '—'}</p>
+            <p><strong>Quantity:</strong> ${data.quantity || '—'}</p>
+            <p><strong>Due Date:</strong> ${dueFormatted}</p>
+            <p><strong>Received Date:</strong> ${recFormatted}</p>
+            <p><strong>Hot Order:</strong> ${hotText}</p>
+            <p><strong>Active:</strong> ${activeText}</p>
+          </div>
+        `;
+      } catch (err) {
+        console.error('Error loading job:', err);
+        jobDetailsDiv.innerHTML =
+          '<p style="color:red;">Failed to load job details.</p>';
+        startOperationBtn.disabled = true;
+      }
+    }
+
+    // ── G) Start operation (log to Firestore) ──
+    startOperationBtn.addEventListener('click', async () => {
+      const operation = operationSelect.value;
+      try {
+        await addDoc(collection(db, 'workLogs'), {
+          jobId,
+          user: currentUser,
+          operation,
+          startTime: serverTimestamp()
+        });
+        alert(`Started "${operation}" on job ${jobId} as ${currentUser}.`);
+        // Optionally, you could redirect back to dashboard:
+        window.location.href = 'index.html';
+      } catch (err) {
+        console.error('Error logging operation:', err);
+        alert('Failed to start operation. Please try again.');
+      }
+    });
+
+    // ── H) On page load: initialize everything ──
+    window.addEventListener('DOMContentLoaded', async () => {
+      // 1) Ensure user is logged in
+      const storedUser = requireLogin();
+      if (!storedUser) return;
+      currentUser = storedUser;
+      workerNameEl.textContent = currentUser;
+
+      // 2) Get jobId param
+      jobId = getJobIdFromURL();
+      if (!jobId) {
+        jobDetailsDiv.innerHTML =
+          '<p style="color:red;">No jobId specified in URL.</p>';
+        return;
+      }
+      jobIdDisplay.textContent = jobId;
+
+      // 3) Fetch and display job details
+      await loadJobDetails(jobId);
+
+      // 4) Show the section now that we have data
+      jobSection.classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>
