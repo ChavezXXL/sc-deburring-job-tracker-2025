@@ -215,6 +215,22 @@ async function initWorker() {
 
   // Refresh “Live Activity” every 30 seconds
   setInterval(loadLiveActivity, 30000);
+
+  // ───────────────────────────────────────────────────────────────────────
+  // 7) Deep‐link: if URL has ?jobId=<someId>, find that row and “click” it
+  // ───────────────────────────────────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  const jumpedJobId = params.get("jobId");
+  if (jumpedJobId) {
+    const row = document.querySelector(
+      `#worker-jobs-tbody tr[data-job-id="${jumpedJobId}"]`
+    );
+    if (row) {
+      const visibleJobNumber = row.cells[0].textContent.trim();
+      openOperationPanel(jumpedJobId, visibleJobNumber);
+      history.replaceState(null, "", window.location.pathname);
+    }
+  }
 }
 
 /* ——————————————————————————————————————————————————————————————————————
@@ -1307,9 +1323,9 @@ window.printQRCode = async function (jobId) {
   }
 };
 
-// ────────────────────────────────────────────────────────────────────────────────
-// 11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
-// ────────────────────────────────────────────────────────────────────────────────
+/* =====================================================
+   11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
+   ===================================================== */
 document.getElementById("search-logs-btn").addEventListener("click", () => {
   loadLogs();
 });
@@ -1835,9 +1851,10 @@ document.getElementById("cancel-log-btn").addEventListener("click", () => {
   document.getElementById("edit-log-modal").classList.add("hidden");
   editingLogId = null;
 });
-  
+
 /* =====================================================
    12) OPEN FROM ?jobId=… (if user scanned QR directly)
+   (Now handled inside initWorker)
    ===================================================== */
 function openFromQueryParam() {
   const params = new URLSearchParams(window.location.search);
@@ -1852,9 +1869,6 @@ function openFromQueryParam() {
     }
   }
 }
-// If you want deep-linking at load, uncomment below after loadActiveJobs in initWorker:
-//   await loadActiveJobs();
-//   openFromQueryParam();
 
 /* =====================================================
    13) OPERATIONS FOR WORKER (populate <select>)
@@ -1899,3 +1913,4 @@ document.getElementById("pin").addEventListener("keypress", (e) => {
     document.getElementById("login-btn").click();
   }
 });
+
