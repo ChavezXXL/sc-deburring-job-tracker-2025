@@ -1,5 +1,3 @@
-// app.js
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getFirestore,
@@ -38,8 +36,8 @@ let opStartTime = null;
 let opTimerInterval = null;
 let operationsCache = []; // Will hold { id, name }
 let isPaused = false;
-let pauseSegments = []; 
-// pauseSegments will store objects of the form { pauseStart: Date, pauseEnd: Date|null }
+let pauseStartTime = null;
+let totalPausedMs = 0;
 
 /* =====================================================
    1) UTILITY: FORMAT DATES → MM/DD/YYYY
@@ -49,7 +47,6 @@ function formatYMDtoMDY(ymd) {
   const [y, m, d] = ymd.split("-");
   return `${m.padStart(2, "0")}/${d.padStart(2, "0")}/${y}`;
 }
-
 function formatTimestamp(ts) {
   if (!ts || !ts.toDate) return "";
   const d = ts.toDate();
@@ -101,10 +98,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
       throw new Error("User not found. Check your username.");
     }
     const userData = userSnap.data();
-    if (
-      !userData.role ||
-      (userData.role !== "worker" && userData.role !== "admin")
-    ) {
+    if (!userData.role || (userData.role !== "worker" && userData.role !== "admin")) {
       throw new Error("Your account role is not set. Contact admin.");
     }
     const storedPin = String(userData.pin || "");
@@ -115,7 +109,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     currentUser = { id: userSnap.id, ...userData };
     localStorage.setItem("currentUser", currentUser.id);
 
-    // Hide all possible sections, then show only the one we need:
+    // Hide everything first
     document.getElementById("login-section").classList.add("hidden");
     document.getElementById("worker-section").classList.add("hidden");
     document.getElementById("main-nav").classList.add("hidden");
@@ -208,31 +202,31 @@ async function initWorker() {
   await loadOperationsForWorker();
   await loadLiveActivity();
 
-  document
-    .getElementById("refresh-jobs-btn")
-    .addEventListener("click", async () => {
-      await loadActiveJobs();
-      await loadCurrentOperation();
-      await loadLiveActivity();
-    });
+  document.getElementById("refresh-jobs-btn").addEventListener("click", async () => {
+    await loadActiveJobs();
+    await loadCurrentOperation();
+    await loadLiveActivity();
+  });
 
   // Refresh “Live Activity” every 30 seconds
   setInterval(loadLiveActivity, 30000);
-
-  // If the page was opened via a ?jobId=... link, auto‐open it
-  await loadActiveJobs();
-  openFromQueryParam();
 }
 
 /* ——————————————————————————————————————————————————————————————————————
-   5A) CURRENT OPERATION PANEL (Worker) + Pause/Resume
+   5A) CURRENT OPERATION PANEL (Worker) WITH PAUSE/RESUME
 —————————————————————————————————————————————————————————————————————— */
 async function loadCurrentOperation() {
-  // Clear any previous timer
+  // Clear any previous timers or paused state
   if (opTimerInterval) {
     clearInterval(opTimerInterval);
     opTimerInterval = null;
   }
+  isPaused = false;
+  pauseStartTime = null;
+  totalPausedMs = 0;
+  document.getElementById("pause-operation-btn").classList.remove("hidden");
+  document.getElementById("resume-operation-btn").classList.add("hidden");
+  document.getElementById("current-op-elapsed").classList.remove("paused-text");
 
   try {
     const logsCol = collection(db, "logs");
@@ -248,8 +242,6 @@ async function loadCurrentOperation() {
       curSec.classList.add("hidden");
       currentOpLogId = null;
       opStartTime = null;
-      isPaused = false;
-      pauseSegments = [];
       return;
     }
 
@@ -264,8 +256,6 @@ async function loadCurrentOperation() {
     const data = chosenDoc.data();
     currentOpLogId = chosenDoc.id;
     opStartTime = data.startTime.toDate();
-    pauseSegments = data.pauseSegments || [];
-    isPaused = data.isPaused || false;
 
     // Show “Job info”
     const jobSnap = await getDoc(doc(db, "jobs", data.jobId));
@@ -287,10 +277,6 @@ async function loadCurrentOperation() {
     const startStr = formatTimestamp(Timestamp.fromDate(opStartTime));
     document.getElementById("current-op-start").textContent = startStr;
 
-    // Show or hide Pause/Resume buttons
-    updatePauseResumeUI();
-
-    // Start updating elapsed timer
     updateElapsedTimer();
     opTimerInterval = setInterval(updateElapsedTimer, 1000);
     curSec.classList.remove("hidden");
@@ -299,19 +285,7 @@ async function loadCurrentOperation() {
     document.getElementById("current-operation-section").classList.add("hidden");
     currentOpLogId = null;
     opStartTime = null;
-    isPaused = false;
-    pauseSegments = [];
   }
-}
-
-function calculateTotalPaused() {
-  // Sum up all (pauseEnd - pauseStart) intervals in milliseconds
-  return pauseSegments.reduce((acc, seg) => {
-    if (seg.pauseEnd) {
-      return acc + (seg.pauseEnd.toDate().getTime() - seg.pauseStart.toDate().getTime());
-    }
-    return acc;
-  }, 0);
 }
 
 function updateElapsedTimer() {
@@ -320,20 +294,9 @@ function updateElapsedTimer() {
     return;
   }
   const now = new Date();
-  // If currently paused, we don’t advance the clock; show the last frozen elapsed time
-  let diffMs = now.getTime() - opStartTime.getTime(); // total elapsed including pauses
-  const totalPausedMs = calculateTotalPaused();
-  let activeMs = diffMs - totalPausedMs;
-  if (isPaused) {
-    // If paused, effectively freeze 'activeMs' at the moment of pauseStart
-    const lastPause = pauseSegments[pauseSegments.length - 1];
-    if (lastPause && lastPause.pauseStart && !lastPause.pauseEnd) {
-      activeMs = lastPause.pauseStart.toDate().getTime() - opStartTime.getTime() - (calculateTotalPaused() - 0);
-    }
-  }
-  if (activeMs < 0) activeMs = 0;
-
-  const totalSeconds = Math.floor(activeMs / 1000);
+  let diffMs = now - opStartTime - totalPausedMs;
+  if (diffMs < 0) diffMs = 0;
+  const totalSeconds = Math.floor(diffMs / 1000);
   const hrs = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
@@ -341,104 +304,59 @@ function updateElapsedTimer() {
   const mm = String(mins).padStart(2, "0");
   const ss = String(secs).padStart(2, "0");
   document.getElementById("current-op-elapsed").textContent = `${hh}:${mm}:${ss}`;
-
-  // If paused, display “Paused” text somewhere (optional styling)
-  if (isPaused) {
-    document.getElementById("current-op-elapsed").classList.add("paused-text");
-  } else {
-    document.getElementById("current-op-elapsed").classList.remove("paused-text");
-  }
 }
 
-function updatePauseResumeUI() {
-  const pauseBtn = document.getElementById("pause-operation-btn");
-  const resumeBtn = document.getElementById("resume-operation-btn");
-  if (isPaused) {
-    pauseBtn.classList.add("hidden");
-    resumeBtn.classList.remove("hidden");
-  } else {
-    pauseBtn.classList.remove("hidden");
-    resumeBtn.classList.add("hidden");
-  }
-}
-
-document.getElementById("pause-operation-btn").addEventListener("click", async () => {
+document.getElementById("pause-operation-btn").addEventListener("click", () => {
   if (!currentOpLogId || isPaused) return;
-  try {
-    const nowTs = Timestamp.now();
-    // Add a new pause segment with pauseStart = now, pauseEnd = null
-    pauseSegments.push({ pauseStart: nowTs, pauseEnd: null });
-
-    // Update Firestore: set isPaused = true and update pauseSegments array
-    await updateDoc(doc(db, "logs", currentOpLogId), {
-      isPaused: true,
-      pauseSegments: pauseSegments
-    });
-    isPaused = true;
-    updatePauseResumeUI();
-  } catch (err) {
-    console.error("Error pausing operation:", err);
-    alert("Failed to pause. Please try again.");
-  }
+  isPaused = true;
+  pauseStartTime = new Date();
+  clearInterval(opTimerInterval);
+  opTimerInterval = null;
+  document.getElementById("pause-operation-btn").classList.add("hidden");
+  document.getElementById("resume-operation-btn").classList.remove("hidden");
+  document.getElementById("current-op-elapsed").classList.add("paused-text");
 });
 
-document.getElementById("resume-operation-btn").addEventListener("click", async () => {
+document.getElementById("resume-operation-btn").addEventListener("click", () => {
   if (!currentOpLogId || !isPaused) return;
-  try {
-    const nowTs = Timestamp.now();
-    // Set pauseEnd for the last pause segment
-    const lastIndex = pauseSegments.length - 1;
-    pauseSegments[lastIndex].pauseEnd = nowTs;
-
-    // Update Firestore: set isPaused = false and updated pauseSegments
-    await updateDoc(doc(db, "logs", currentOpLogId), {
-      isPaused: false,
-      pauseSegments: pauseSegments
-    });
-    isPaused = false;
-    updatePauseResumeUI();
-  } catch (err) {
-    console.error("Error resuming operation:", err);
-    alert("Failed to resume. Please try again.");
-  }
+  const now = new Date();
+  totalPausedMs += now - pauseStartTime;
+  pauseStartTime = null;
+  isPaused = false;
+  document.getElementById("pause-operation-btn").classList.remove("hidden");
+  document.getElementById("resume-operation-btn").classList.add("hidden");
+  document.getElementById("current-op-elapsed").classList.remove("paused-text");
+  updateElapsedTimer();
+  opTimerInterval = setInterval(updateElapsedTimer, 1000);
 });
 
-document
-  .getElementById("stop-operation-btn")
-  .addEventListener("click", async () => {
-    if (!currentOpLogId) return;
-    try {
-      // If currently paused, close out that last segment
-      if (isPaused) {
-        const nowTs = Timestamp.now();
-        const lastIndex = pauseSegments.length - 1;
-        pauseSegments[lastIndex].pauseEnd = nowTs;
-      }
-
-      // Update Firestore: set endTime and ensure pauseSegments are current
-      await updateDoc(doc(db, "logs", currentOpLogId), {
-        endTime: Timestamp.now(),
-        isPaused: false,
-        pauseSegments: pauseSegments
-      });
-
-      if (opTimerInterval) {
-        clearInterval(opTimerInterval);
-        opTimerInterval = null;
-      }
+document.getElementById("stop-operation-btn").addEventListener("click", async () => {
+  if (!currentOpLogId) return;
+  try {
+    // If paused when they click "Stop", account for final paused interval
+    if (isPaused && pauseStartTime) {
+      const now = new Date();
+      totalPausedMs += now - pauseStartTime;
+      pauseStartTime = null;
       isPaused = false;
-      pauseSegments = [];
-      document.getElementById("current-operation-section").classList.add("hidden");
-      currentOpLogId = null;
-      opStartTime = null;
-
-      await loadActiveJobs();
-      await loadLiveActivity();
-    } catch (err) {
-      console.error("Error stopping operation:", err);
-      alert("Failed to stop operation. Please try again.");
     }
-  });
+    // Compute final end time from current time
+    await updateDoc(doc(db, "logs", currentOpLogId), { endTime: Timestamp.now() });
+    if (opTimerInterval) {
+      clearInterval(opTimerInterval);
+      opTimerInterval = null;
+    }
+    document.getElementById("current-operation-section").classList.add("hidden");
+    currentOpLogId = null;
+    opStartTime = null;
+    totalPausedMs = 0;
+    await loadActiveJobs();
+    await loadLiveActivity();
+  } catch (err) {
+    console.error("Error stopping operation:", err);
+    alert("Failed to stop operation. Please try again.");
+  }
+});
 
 /* ——————————————————————————————————————————————————————————————————————
    5B) LIVE ACTIVITY PANEL (Worker)
@@ -552,7 +470,7 @@ async function loadActiveJobs() {
           openOperationPanel(jobId, visibleJobNumber);
         });
       } else {
-        tr.title = "Finish (or resume) current operation before starting a new one";
+        tr.title = "Finish or resume/pause current operation before starting a new one";
       }
 
       tbody.appendChild(tr);
@@ -574,63 +492,57 @@ async function loadActiveJobs() {
 function openOperationPanel(jobId, visibleJobNumber) {
   document.getElementById("op-job-id").textContent = visibleJobNumber;
   document.getElementById("operation-section").classList.remove("hidden");
-  document
-    .getElementById("operation-section")
-    .scrollIntoView({ behavior: "smooth" });
+  document.getElementById("operation-section").scrollIntoView({ behavior: "smooth" });
 }
 
-document
-  .getElementById("cancel-operation-btn")
-  .addEventListener("click", () => {
-    document.getElementById("operation-section").classList.add("hidden");
-  });
+document.getElementById("cancel-operation-btn").addEventListener("click", () => {
+  document.getElementById("operation-section").classList.add("hidden");
+});
 
-document
-  .getElementById("start-operation-btn")
-  .addEventListener("click", async () => {
-    const visibleJobNumber = document.getElementById("op-job-id").textContent;
-    let pickedJobId = null;
-    document.querySelectorAll("#worker-jobs-tbody tr").forEach((row) => {
-      const textJobNum = row.cells[0]?.textContent.trim();
-      if (textJobNum === visibleJobNumber) {
-        pickedJobId = row.dataset.jobId;
-      }
+document.getElementById("start-operation-btn").addEventListener("click", async () => {
+  const visibleJobNumber = document.getElementById("op-job-id").textContent;
+  let pickedJobId = null;
+  document.querySelectorAll("#worker-jobs-tbody tr").forEach((row) => {
+    const textJobNum = row.cells[0]?.textContent.trim();
+    if (textJobNum === visibleJobNumber) {
+      pickedJobId = row.dataset.jobId;
+    }
+  });
+  if (!pickedJobId) {
+    alert("Could not determine job ID. Please refresh and try again.");
+    return;
+  }
+
+  const opDocId = document.getElementById("operation-select").value;
+  if (!opDocId) {
+    alert("Please select an operation.");
+    return;
+  }
+
+  try {
+    // Reset any previous pause state before starting a fresh log
+    isPaused = false;
+    pauseStartTime = null;
+    totalPausedMs = 0;
+    const docRef = await addDoc(collection(db, "logs"), {
+      jobId: pickedJobId,
+      user: currentUser.id,
+      operation: opDocId,
+      startTime: Timestamp.now(),
+      endTime: null
     });
-    if (!pickedJobId) {
-      alert("Could not determine job ID. Please refresh and try again.");
-      return;
-    }
+    currentOpLogId = docRef.id;
+    opStartTime = new Date();
 
-    const opDocId = document.getElementById("operation-select").value;
-    if (!opDocId) {
-      alert("Please select an operation.");
-      return;
-    }
-
-    try {
-      const docRef = await addDoc(collection(db, "logs"), {
-        jobId: pickedJobId,
-        user: currentUser.id,
-        operation: opDocId,
-        startTime: Timestamp.now(),
-        endTime: null,
-        isPaused: false,
-        pauseSegments: []
-      });
-      currentOpLogId = docRef.id;
-      opStartTime = new Date();
-      isPaused = false;
-      pauseSegments = [];
-
-      document.getElementById("operation-section").classList.add("hidden");
-      await loadCurrentOperation();
-      await loadActiveJobs();
-      await loadLiveActivity();
-    } catch (err) {
-      console.error("Error logging operation:", err);
-      alert("Failed to start operation. Please try again.");
-    }
-  });
+    document.getElementById("operation-section").classList.add("hidden");
+    await loadCurrentOperation();
+    await loadActiveJobs();
+    await loadLiveActivity();
+  } catch (err) {
+    console.error("Error logging operation:", err);
+    alert("Failed to start operation. Please try again.");
+  }
+});
 
 /* =====================================================
    6) ADMIN NAV + TAB SWITCHING
@@ -642,12 +554,8 @@ function showAdminNav() {
   document.getElementById("main-nav").classList.remove("hidden");
   document.getElementById("admin-name").textContent = currentUser.id;
 
-  document
-    .getElementById("tab-operations")
-    .addEventListener("click", showOperationsTab);
-  document
-    .getElementById("tab-employees")
-    .addEventListener("click", showEmployeesTab);
+  document.getElementById("tab-operations").addEventListener("click", showOperationsTab);
+  document.getElementById("tab-employees").addEventListener("click", showEmployeesTab);
   document.getElementById("tab-jobs").addEventListener("click", showJobsTab);
   document.getElementById("tab-logs").addEventListener("click", showLogsTab);
 
@@ -728,9 +636,7 @@ async function createOperation() {
   }
 
   // Avoid duplicates
-  const duplicate = operationsCache.find(
-    (o) => o.name.toLowerCase() === nameInput.toLowerCase()
-  );
+  const duplicate = operationsCache.find((o) => o.name.toLowerCase() === nameInput.toLowerCase());
   if (duplicate) {
     alert(`“${nameInput}” already exists`);
     return;
@@ -1235,7 +1141,6 @@ function renderCompletedJobsGrouped(completedJobsArray, { poValue, partValue, da
             <td>
               <button class="action-btn delete" onclick="deleteJob('${jobId}')">Delete</button>
               <button class="btn btn-warning btn-sm ml-1" onclick="editJob('${jobId}')">Edit</button>
-              <button class="btn btn-success btn-sm ml-1" onclick="markJobCompleted('${jobId}')">Complete</button>
             </td>
           `;
           tbody.appendChild(tr);
@@ -1424,9 +1329,9 @@ window.printQRCode = async function (jobId) {
   }
 };
 
-// ────────────────────────────────────────────────────────────────────────────────
-// 11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
-// ────────────────────────────────────────────────────────────────────────────────
+/* =====================================================
+   11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
+   ===================================================== */
 document.getElementById("search-logs-btn").addEventListener("click", () => {
   loadLogs();
 });
@@ -1569,13 +1474,13 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
     return titleA.localeCompare(titleB);
   });
 
-  // For each job, render a sub‐heading + table of its entries
+  // For each job, render a sub-heading + table of its entries
   jobIds.forEach((jobId) => {
     const jobEntries = byJob[jobId];
     const jobData = jobsMap[jobId] || {};
     const jobTitle = jobData.title;
 
-    // Sub‐heading for this job
+    // Sub-heading for this job
     const h5 = document.createElement("h5");
     h5.textContent = `Job: ${jobTitle}`;
     h5.style.marginTop = "1rem";
@@ -1583,9 +1488,7 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
     activeDiv.appendChild(h5);
 
     // Sort this job’s entries by startTime ascending
-    jobEntries.sort((a, b) => {
-      return a.startTime.toDate() - b.startTime.toDate();
-    });
+    jobEntries.sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
 
     // Build table for this job
     const table = document.createElement("table");
@@ -1783,9 +1686,7 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
         const tb = document.createElement("tbody");
 
         // Sort entries by startTime ascending
-        entries.sort((a, b) => {
-          return a.startTime.toDate() - b.startTime.toDate();
-        });
+        entries.sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
 
         entries.forEach((entry) => {
           let durationText = "In progress";
@@ -1915,7 +1816,6 @@ document.getElementById("save-log-btn").addEventListener("click", async () => {
     // Helper to convert HTML datetime-local (YYYY-MM-DDTHH:mm:ss) → Firestore Timestamp
     function parseLocalDatetime(str) {
       if (!str) return null;
-      // `new Date(str)` works for “YYYY-MM-DDTHH:mm:ss”
       const d = new Date(str);
       if (isNaN(d.getTime())) return null;
       return Timestamp.fromDate(d);
@@ -1952,7 +1852,7 @@ document.getElementById("cancel-log-btn").addEventListener("click", () => {
   document.getElementById("edit-log-modal").classList.add("hidden");
   editingLogId = null;
 });
-  
+
 /* =====================================================
    12) OPEN FROM ?jobId=… (if user scanned QR directly)
    ===================================================== */
@@ -1969,6 +1869,9 @@ function openFromQueryParam() {
     }
   }
 }
+// If you want deep-linking at load, uncomment below after loadActiveJobs in initWorker:
+//   await loadActiveJobs();
+//   openFromQueryParam();
 
 /* =====================================================
    13) OPERATIONS FOR WORKER (populate <select>)
@@ -2013,3 +1916,4 @@ document.getElementById("pin").addEventListener("keypress", (e) => {
     document.getElementById("login-btn").click();
   }
 });
+
