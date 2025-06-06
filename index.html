@@ -35,6 +35,12 @@
     .table th, .table td { border: 1px solid #d1d1d6; padding: 0.6rem; text-align: left; }
     .table th { background: #f5f5f7; }
     .label-inline { margin-left: 0.5rem; }
+
+    /* Optional: make “Elapsed” red/italic when paused */
+    .paused-text {
+      color: #d9534f;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -74,7 +80,11 @@
       <p>Operation: <span id="current-op-name"></span></p>
       <p>Started at: <span id="current-op-start"></span></p>
       <p>Elapsed: <span id="current-op-elapsed">00:00:00</span></p>
-      <button id="stop-operation-btn" class="btn btn-danger">Stop Operation</button>
+      <div style="margin-top: 1rem;">
+        <button id="pause-operation-btn" class="btn btn-warning ml-1">Pause</button>
+        <button id="resume-operation-btn" class="btn btn-success ml-1 hidden">Resume</button>
+        <button id="stop-operation-btn" class="btn btn-danger ml-1">Stop Operation</button>
+      </div>
     </div>
 
     <!-- 2B) Live Activity Panel -->
@@ -338,10 +348,10 @@
     </div>
   </div>
 
-    <!-- ────────────────────────────────────────────────────────────────────────────────
-       EDIT‐LOG MODAL (hidden by default)
-       ──────────────────────────────────────────────────────────────────────────────── -->
-       <div id="edit-log-modal" class="hidden" style="
+  <!-- ────────────────────────────────────────────────────────────────────────────────
+     EDIT-LOG MODAL (hidden by default)
+     ──────────────────────────────────────────────────────────────────────────────── -->
+  <div id="edit-log-modal" class="hidden" style="
        position: fixed;
        top: 0; left: 0; right: 0; bottom: 0;
        background: rgba(0,0,0,0.5);
@@ -350,7 +360,7 @@
        justify-content: center;
        z-index: 1000;
      ">
-     <div style="
+    <div style="
          background: #fff;
          padding: 1.5rem;
          border-radius: 8px;
@@ -358,31 +368,31 @@
          width: 100%;
          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
        ">
-       <h3 style="margin-top: 0; margin-bottom: 1rem;">Edit Log Entry</h3>
-       <div class="form-group" style="margin-bottom: 1rem;">
-         <label for="edit-start-input" style="display:block; margin-bottom:0.3rem;">Start Time</label>
-         <input id="edit-start-input" type="datetime-local" step="1" style="
-             width: 100%;
-             padding: 0.5rem;
-             border: 1px solid #d1d1d6;
-             border-radius: 4px;
-           "/>
-       </div>
-       <div class="form-group" style="margin-bottom: 1rem;">
-         <label for="edit-end-input" style="display:block; margin-bottom:0.3rem;">End Time</label>
-         <input id="edit-end-input" type="datetime-local" step="1" style="
-             width: 100%;
-             padding: 0.5rem;
-             border: 1px solid #d1d1d6;
-             border-radius: 4px;
-           "/>
-       </div>
-       <div style="text-align: right;">
-         <button id="save-log-btn" class="btn btn-primary" style="margin-right: 0.5rem;">Save</button>
-         <button id="cancel-log-btn" class="btn btn-secondary">Cancel</button>
-       </div>
-     </div>
-   </div> 
+      <h3 style="margin-top: 0; margin-bottom: 1rem;">Edit Log Entry</h3>
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="edit-start-input" style="display:block; margin-bottom:0.3rem;">Start Time</label>
+        <input id="edit-start-input" type="datetime-local" step="1" style="
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d1d6;
+            border-radius: 4px;
+          "/>
+      </div>
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="edit-end-input" style="display:block; margin-bottom:0.3rem;">End Time</label>
+        <input id="edit-end-input" type="datetime-local" step="1" style="
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d1d6;
+            border-radius: 4px;
+          "/>
+      </div>
+      <div style="text-align: right;">
+        <button id="save-log-btn" class="btn btn-primary" style="margin-right: 0.5rem;">Save</button>
+        <button id="cancel-log-btn" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ────────────────────────────────────────────────────────────────────────────────
      4) LINK TO THE MATCHING app.js  
