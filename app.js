@@ -30,23 +30,28 @@ const firebaseConfig = {
 initializeApp(firebaseConfig);
 const db = getFirestore();
 
+/* =====================================================
+   GLOBAL STATE
+   ===================================================== */
 let currentUser = null;
-let currentOpLogId = null;
-let opStartTime = null;
-let opTimerInterval = null;
-let operationsCache = []; // Will hold { id, name }
-let isPaused = false;
-let pauseStartTime = null;
-let totalPausedMs = 0;
+let currentOpLogId = null;    // Firestore document ID for the currently‐running log
+let opStartTime = null;       // Local JS Date of when this operation started
+let opTimerInterval = null;   // setInterval handle for updating “Elapsed”
+let operationsCache = [];     // [{id, name}, …]
+
+let isPaused = false;         // Whether the current operation is paused
+let pauseStartTime = null;    // JS Date of when the user clicked “Pause”
+let totalPausedMs = 0;        // Cumulative paused time (in milliseconds)
 
 /* =====================================================
-   1) UTILITY: FORMAT DATES → MM/DD/YYYY
+   1) UTILITY FUNCTIONS
    ===================================================== */
 function formatYMDtoMDY(ymd) {
   if (!ymd) return "";
   const [y, m, d] = ymd.split("-");
   return `${m.padStart(2, "0")}/${d.padStart(2, "0")}/${y}`;
 }
+
 function formatTimestamp(ts) {
   if (!ts || !ts.toDate) return "";
   const d = ts.toDate();
@@ -57,6 +62,14 @@ function formatTimestamp(ts) {
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
   return `${month}/${day}/${year} ${hh}:${mm}:${ss}`;
+}
+
+function formatMsToHMS(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 /* =====================================================
@@ -109,7 +122,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     currentUser = { id: userSnap.id, ...userData };
     localStorage.setItem("currentUser", currentUser.id);
 
-    // Hide everything first
+    // Hide everything first:
     document.getElementById("login-section").classList.add("hidden");
     document.getElementById("worker-section").classList.add("hidden");
     document.getElementById("main-nav").classList.add("hidden");
@@ -213,7 +226,7 @@ async function initWorker() {
 }
 
 /* ——————————————————————————————————————————————————————————————————————
-   5A) CURRENT OPERATION PANEL (Worker) WITH PAUSE/RESUME
+   5A) CURRENT OPERATION PANEL (Worker) WITH Pause/Resume
 —————————————————————————————————————————————————————————————————————— */
 async function loadCurrentOperation() {
   // Clear any previous timers or paused state
@@ -224,9 +237,12 @@ async function loadCurrentOperation() {
   isPaused = false;
   pauseStartTime = null;
   totalPausedMs = 0;
-  document.getElementById("pause-operation-btn").classList.remove("hidden");
-  document.getElementById("resume-operation-btn").classList.add("hidden");
-  document.getElementById("current-op-elapsed").classList.remove("paused-text");
+
+  // Reset the button text/style on each load
+  const pauseResumeBtn = document.getElementById("pause-resume-btn");
+  pauseResumeBtn.textContent = "Pause";
+  pauseResumeBtn.classList.remove("btn-success");
+  pauseResumeBtn.classList.add("btn-warning");
 
   try {
     const logsCol = collection(db, "logs");
@@ -257,6 +273,9 @@ async function loadCurrentOperation() {
     currentOpLogId = chosenDoc.id;
     opStartTime = data.startTime.toDate();
 
+    // Load any previously-saved pausedMs
+    totalPausedMs = data.pausedMs || 0;
+
     // Show “Job info”
     const jobSnap = await getDoc(doc(db, "jobs", data.jobId));
     let jobInfo = data.jobId;
@@ -277,8 +296,10 @@ async function loadCurrentOperation() {
     const startStr = formatTimestamp(Timestamp.fromDate(opStartTime));
     document.getElementById("current-op-start").textContent = startStr;
 
+    // Start the elapsed‐timer (subtracting any paused time)
     updateElapsedTimer();
     opTimerInterval = setInterval(updateElapsedTimer, 1000);
+
     curSec.classList.remove("hidden");
   } catch (error) {
     console.error("Error loading current operation:", error);
@@ -306,42 +327,72 @@ function updateElapsedTimer() {
   document.getElementById("current-op-elapsed").textContent = `${hh}:${mm}:${ss}`;
 }
 
-document.getElementById("pause-operation-btn").addEventListener("click", () => {
-  if (!currentOpLogId || isPaused) return;
-  isPaused = true;
-  pauseStartTime = new Date();
-  clearInterval(opTimerInterval);
-  opTimerInterval = null;
-  document.getElementById("pause-operation-btn").classList.add("hidden");
-  document.getElementById("resume-operation-btn").classList.remove("hidden");
-  document.getElementById("current-op-elapsed").classList.add("paused-text");
+// SINGLE Pause/Resume button listener
+document.getElementById("pause-resume-btn").addEventListener("click", async () => {
+  if (!currentOpLogId) return;
+
+  const pauseResumeBtn = document.getElementById("pause-resume-btn");
+  if (!isPaused) {
+    // → Pause
+    isPaused = true;
+    pauseStartTime = new Date();
+    if (opTimerInterval) {
+      clearInterval(opTimerInterval);
+      opTimerInterval = null;
+    }
+    // Update button appearance
+    pauseResumeBtn.textContent = "Resume";
+    pauseResumeBtn.classList.remove("btn-warning");
+    pauseResumeBtn.classList.add("btn-success");
+    document.getElementById("current-op-elapsed").classList.add("paused-text");
+  } else {
+    // → Resume
+    const now = new Date();
+    const pausedInterval = now - pauseStartTime;
+    totalPausedMs += pausedInterval;
+    pauseStartTime = null;
+    isPaused = false;
+
+    // Persist the updated totalPausedMs into Firestore
+    try {
+      const logRef = doc(db, "logs", currentOpLogId);
+      await updateDoc(logRef, { pausedMs: totalPausedMs });
+    } catch (err) {
+      console.error("Error saving paused time:", err);
+    }
+
+    // Flip button back
+    pauseResumeBtn.textContent = "Pause";
+    pauseResumeBtn.classList.remove("btn-success");
+    pauseResumeBtn.classList.add("btn-warning");
+    document.getElementById("current-op-elapsed").classList.remove("paused-text");
+
+    // Restart the elapsed‐timer
+    updateElapsedTimer();
+    opTimerInterval = setInterval(updateElapsedTimer, 1000);
+  }
 });
 
-document.getElementById("resume-operation-btn").addEventListener("click", () => {
-  if (!currentOpLogId || !isPaused) return;
-  const now = new Date();
-  totalPausedMs += now - pauseStartTime;
-  pauseStartTime = null;
-  isPaused = false;
-  document.getElementById("pause-operation-btn").classList.remove("hidden");
-  document.getElementById("resume-operation-btn").classList.add("hidden");
-  document.getElementById("current-op-elapsed").classList.remove("paused-text");
-  updateElapsedTimer();
-  opTimerInterval = setInterval(updateElapsedTimer, 1000);
-});
-
+// STOP OPERATION
 document.getElementById("stop-operation-btn").addEventListener("click", async () => {
   if (!currentOpLogId) return;
   try {
-    // If paused when they click "Stop", account for final paused interval
+    const logRef = doc(db, "logs", currentOpLogId);
+
+    // If currently paused, finalize that paused interval
     if (isPaused && pauseStartTime) {
       const now = new Date();
       totalPausedMs += now - pauseStartTime;
       pauseStartTime = null;
       isPaused = false;
+
+      // Persist final pausedMs
+      await updateDoc(logRef, { pausedMs: totalPausedMs });
     }
-    // Compute final end time from current time
-    await updateDoc(doc(db, "logs", currentOpLogId), { endTime: Timestamp.now() });
+
+    // Now set endTime:
+    await updateDoc(logRef, { endTime: Timestamp.now() });
+
     if (opTimerInterval) {
       clearInterval(opTimerInterval);
       opTimerInterval = null;
@@ -520,16 +571,19 @@ document.getElementById("start-operation-btn").addEventListener("click", async (
   }
 
   try {
-    // Reset any previous pause state before starting a fresh log
+    // Reset pause-state:
     isPaused = false;
     pauseStartTime = null;
     totalPausedMs = 0;
+
+    // When creating a new log, set pausedMs: 0
     const docRef = await addDoc(collection(db, "logs"), {
       jobId: pickedJobId,
       user: currentUser.id,
       operation: opDocId,
       startTime: Timestamp.now(),
-      endTime: null
+      endTime: null,
+      pausedMs: 0
     });
     currentOpLogId = docRef.id;
     opStartTime = new Date();
@@ -1221,7 +1275,8 @@ window.markJobCompleted = async function (jobId) {
       user: currentUser.id,
       operation: "COMPLETED_JOB",
       startTime: Timestamp.now(),
-      endTime: Timestamp.now()
+      endTime: Timestamp.now(),
+      pausedMs: 0
     });
     loadJobsList();
   } catch (err) {
@@ -1494,10 +1549,12 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
     const table = document.createElement("table");
     table.className = "table";
     table.style.fontSize = "0.9rem";
+
+    // Now add a “Paused” column
     table.innerHTML = `
       <thead>
         <tr style="background:#eef7f1;">
-          <th>User</th><th>Operation</th><th>Duration</th>
+          <th>User</th><th>Operation</th><th>Duration</th><th>Paused</th>
           <th>Start Time</th><th>End Time</th><th>Edit</th><th>Delete</th>
         </tr>
       </thead>
@@ -1505,20 +1562,19 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
     const tbody = document.createElement("tbody");
 
     jobEntries.forEach((entry) => {
-      // Compute duration
+      // How long was this entry paused? (in ms)
+      const pausedMs = entry.pausedMs || 0;
+      const pausedText = formatMsToHMS(pausedMs);
+
+      // Compute duration EXCLUDING pausedMs
       let durationText = "In progress";
       if (entry.startTime && entry.endTime) {
         const s = entry.startTime.toDate();
         const e = entry.endTime.toDate();
-        const diffSec = Math.floor((e - s) / 1000);
-        const h = Math.floor(diffSec / 3600);
-        const m = Math.floor((diffSec % 3600) / 60);
-        const s2 = diffSec % 60;
-        durationText =
-          String(h).padStart(2, "0") + ":" +
-          String(m).padStart(2, "0") + ":" +
-          String(s2).padStart(2, "0");
+        const effectiveMs = (e - s) - pausedMs;
+        durationText = formatMsToHMS(effectiveMs < 0 ? 0 : effectiveMs);
       }
+
       const startStr = entry.startTime ? formatTimestamp(entry.startTime) : "-";
       const endStr   = entry.endTime   ? formatTimestamp(entry.endTime)   : "In progress";
       const opName   = operationsMap[entry.operation] || entry.operation;
@@ -1528,6 +1584,7 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
         <td>${entry.user}</td>
         <td>${opName}</td>
         <td>${durationText}</td>
+        <td>${pausedText}</td>
         <td>${startStr}</td>
         <td>${endStr}</td>
         <td><button class="btn btn-warning btn-sm" id="edit-log-${entry.id}">Edit</button></td>
@@ -1647,11 +1704,14 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
 
         // Compute total time for all entries of this job
         let totalSeconds = 0;
+        let totalPausedSeconds = 0;
         entries.forEach((entry) => {
           const s = entry.startTime.toDate();
           const e = entry.endTime ? entry.endTime.toDate() : null;
+          const pMs = entry.pausedMs || 0;
           if (s && e) {
-            totalSeconds += Math.floor((e - s) / 1000);
+            totalSeconds += Math.floor((e - s) / 1000) - Math.floor(pMs / 1000);
+            totalPausedSeconds += Math.floor(pMs / 1000);
           }
         });
         const th = Math.floor(totalSeconds / 3600);
@@ -1662,13 +1722,21 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
           String(tm).padStart(2, "0") + ":" +
           String(ts).padStart(2, "0");
 
+        const pausedTh = Math.floor(totalPausedSeconds / 3600);
+        const pausedTm = Math.floor((totalPausedSeconds % 3600) / 60);
+        const pausedTs = totalPausedSeconds % 60;
+        const pausedDisplay =
+          String(pausedTh).padStart(2, "0") + ":" +
+          String(pausedTm).padStart(2, "0") + ":" +
+          String(pausedTs).padStart(2, "0");
+
         const jobSection = document.createElement("div");
         jobSection.className = "job-logs";
         jobSection.style.marginLeft = "2rem";
         jobSection.style.marginBottom = "1.5rem";
 
         const jobHeader = document.createElement("h4");
-        jobHeader.textContent = `Job: ${jobTitle}  (Total Time: ${totalDisplay})`;
+        jobHeader.textContent = `Job: ${jobTitle}  (Total Time: ${totalDisplay} | Total Paused: ${pausedDisplay})`;
         jobHeader.style.marginBottom = "0.5rem";
         jobSection.appendChild(jobHeader);
 
@@ -1678,7 +1746,7 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
         table.innerHTML = `
           <thead>
             <tr style="background:#eef7f1;">
-              <th>User</th><th>Operation</th><th>Duration</th>
+              <th>User</th><th>Operation</th><th>Duration</th><th>Paused</th>
               <th>Start Time</th><th>End Time</th><th>Edit</th><th>Delete</th>
             </tr>
           </thead>
@@ -1689,18 +1757,15 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
         entries.sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
 
         entries.forEach((entry) => {
+          const pMs = entry.pausedMs || 0;
+          const pausedText = formatMsToHMS(pMs);
+
           let durationText = "In progress";
           if (entry.startTime && entry.endTime) {
             const s = entry.startTime.toDate();
             const e = entry.endTime.toDate();
-            const diffSec = Math.floor((e - s) / 1000);
-            const h = Math.floor(diffSec / 3600);
-            const m = Math.floor((diffSec % 3600) / 60);
-            const s2 = diffSec % 60;
-            durationText =
-              String(h).padStart(2, "0") + ":" +
-              String(m).padStart(2, "0") + ":" +
-              String(s2).padStart(2, "0");
+            const effectiveMs = (e - s) - pMs;
+            durationText = formatMsToHMS(effectiveMs < 0 ? 0 : effectiveMs);
           }
           const startStr = entry.startTime ? formatTimestamp(entry.startTime) : "-";
           const endStr   = entry.endTime   ? formatTimestamp(entry.endTime)   : "In progress";
@@ -1711,6 +1776,7 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
             <td>${entry.user}</td>
             <td>${opName}</td>
             <td>${durationText}</td>
+            <td>${pausedText}</td>
             <td>${startStr}</td>
             <td>${endStr}</td>
             <td><button class="btn btn-warning btn-sm" id="edit-log-${entry.id}">Edit</button></td>
@@ -1916,4 +1982,3 @@ document.getElementById("pin").addEventListener("keypress", (e) => {
     document.getElementById("login-btn").click();
   }
 });
-
