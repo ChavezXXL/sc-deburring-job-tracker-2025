@@ -212,6 +212,10 @@ function showWorkerDashboard() {
 async function initWorker() {
   await loadCurrentOperation();
   await loadActiveJobs();
+
+  // <<— Here is the added call: after loadActiveJobs(), run openFromQueryParam()
+  openFromQueryParam();
+
   await loadOperationsForWorker();
   await loadLiveActivity();
 
@@ -403,7 +407,7 @@ document.getElementById("stop-operation-btn").addEventListener("click", async ()
     totalPausedMs = 0;
     await loadActiveJobs();
     await loadLiveActivity();
-  } catch (err) {
+  } catch (err) {  
     console.error("Error stopping operation:", err);
     alert("Failed to stop operation. Please try again.");
   }
@@ -1935,9 +1939,6 @@ function openFromQueryParam() {
     }
   }
 }
-// If you want deep-linking at load, uncomment below after loadActiveJobs in initWorker:
-//   await loadActiveJobs();
-//   openFromQueryParam();
 
 /* =====================================================
    13) OPERATIONS FOR WORKER (populate <select>)
