@@ -37,6 +37,9 @@ let currentOpLogId = null;
 let opStartTime = null;
 let opTimerInterval = null;
 let operationsCache = []; // Will hold { id, name }
+let isPaused = false;
+let pauseSegments = []; 
+// pauseSegments will store objects of the form { pauseStart: Date, pauseEnd: Date|null }
 
 /* =====================================================
    1) UTILITY: FORMAT DATES → MM/DD/YYYY
@@ -216,27 +219,16 @@ async function initWorker() {
   // Refresh “Live Activity” every 30 seconds
   setInterval(loadLiveActivity, 30000);
 
-  // ───────────────────────────────────────────────────────────────────────
-  // 7) Deep‐link: if URL has ?jobId=<someId>, find that row and “click” it
-  // ───────────────────────────────────────────────────────────────────────
-  const params = new URLSearchParams(window.location.search);
-  const jumpedJobId = params.get("jobId");
-  if (jumpedJobId) {
-    const row = document.querySelector(
-      `#worker-jobs-tbody tr[data-job-id="${jumpedJobId}"]`
-    );
-    if (row) {
-      const visibleJobNumber = row.cells[0].textContent.trim();
-      openOperationPanel(jumpedJobId, visibleJobNumber);
-      history.replaceState(null, "", window.location.pathname);
-    }
-  }
+  // If the page was opened via a ?jobId=... link, auto‐open it
+  await loadActiveJobs();
+  openFromQueryParam();
 }
 
 /* ——————————————————————————————————————————————————————————————————————
-   5A) CURRENT OPERATION PANEL (Worker)
+   5A) CURRENT OPERATION PANEL (Worker) + Pause/Resume
 —————————————————————————————————————————————————————————————————————— */
 async function loadCurrentOperation() {
+  // Clear any previous timer
   if (opTimerInterval) {
     clearInterval(opTimerInterval);
     opTimerInterval = null;
@@ -256,6 +248,8 @@ async function loadCurrentOperation() {
       curSec.classList.add("hidden");
       currentOpLogId = null;
       opStartTime = null;
+      isPaused = false;
+      pauseSegments = [];
       return;
     }
 
@@ -270,6 +264,8 @@ async function loadCurrentOperation() {
     const data = chosenDoc.data();
     currentOpLogId = chosenDoc.id;
     opStartTime = data.startTime.toDate();
+    pauseSegments = data.pauseSegments || [];
+    isPaused = data.isPaused || false;
 
     // Show “Job info”
     const jobSnap = await getDoc(doc(db, "jobs", data.jobId));
@@ -291,6 +287,10 @@ async function loadCurrentOperation() {
     const startStr = formatTimestamp(Timestamp.fromDate(opStartTime));
     document.getElementById("current-op-start").textContent = startStr;
 
+    // Show or hide Pause/Resume buttons
+    updatePauseResumeUI();
+
+    // Start updating elapsed timer
     updateElapsedTimer();
     opTimerInterval = setInterval(updateElapsedTimer, 1000);
     curSec.classList.remove("hidden");
@@ -299,7 +299,19 @@ async function loadCurrentOperation() {
     document.getElementById("current-operation-section").classList.add("hidden");
     currentOpLogId = null;
     opStartTime = null;
+    isPaused = false;
+    pauseSegments = [];
   }
+}
+
+function calculateTotalPaused() {
+  // Sum up all (pauseEnd - pauseStart) intervals in milliseconds
+  return pauseSegments.reduce((acc, seg) => {
+    if (seg.pauseEnd) {
+      return acc + (seg.pauseEnd.toDate().getTime() - seg.pauseStart.toDate().getTime());
+    }
+    return acc;
+  }, 0);
 }
 
 function updateElapsedTimer() {
@@ -308,9 +320,20 @@ function updateElapsedTimer() {
     return;
   }
   const now = new Date();
-  let diffMs = now - opStartTime;
-  if (diffMs < 0) diffMs = 0;
-  const totalSeconds = Math.floor(diffMs / 1000);
+  // If currently paused, we don’t advance the clock; show the last frozen elapsed time
+  let diffMs = now.getTime() - opStartTime.getTime(); // total elapsed including pauses
+  const totalPausedMs = calculateTotalPaused();
+  let activeMs = diffMs - totalPausedMs;
+  if (isPaused) {
+    // If paused, effectively freeze 'activeMs' at the moment of pauseStart
+    const lastPause = pauseSegments[pauseSegments.length - 1];
+    if (lastPause && lastPause.pauseStart && !lastPause.pauseEnd) {
+      activeMs = lastPause.pauseStart.toDate().getTime() - opStartTime.getTime() - (calculateTotalPaused() - 0);
+    }
+  }
+  if (activeMs < 0) activeMs = 0;
+
+  const totalSeconds = Math.floor(activeMs / 1000);
   const hrs = Math.floor(totalSeconds / 3600);
   const mins = Math.floor((totalSeconds % 3600) / 60);
   const secs = totalSeconds % 60;
@@ -318,23 +341,97 @@ function updateElapsedTimer() {
   const mm = String(mins).padStart(2, "0");
   const ss = String(secs).padStart(2, "0");
   document.getElementById("current-op-elapsed").textContent = `${hh}:${mm}:${ss}`;
+
+  // If paused, display “Paused” text somewhere (optional styling)
+  if (isPaused) {
+    document.getElementById("current-op-elapsed").classList.add("paused-text");
+  } else {
+    document.getElementById("current-op-elapsed").classList.remove("paused-text");
+  }
 }
+
+function updatePauseResumeUI() {
+  const pauseBtn = document.getElementById("pause-operation-btn");
+  const resumeBtn = document.getElementById("resume-operation-btn");
+  if (isPaused) {
+    pauseBtn.classList.add("hidden");
+    resumeBtn.classList.remove("hidden");
+  } else {
+    pauseBtn.classList.remove("hidden");
+    resumeBtn.classList.add("hidden");
+  }
+}
+
+document.getElementById("pause-operation-btn").addEventListener("click", async () => {
+  if (!currentOpLogId || isPaused) return;
+  try {
+    const nowTs = Timestamp.now();
+    // Add a new pause segment with pauseStart = now, pauseEnd = null
+    pauseSegments.push({ pauseStart: nowTs, pauseEnd: null });
+
+    // Update Firestore: set isPaused = true and update pauseSegments array
+    await updateDoc(doc(db, "logs", currentOpLogId), {
+      isPaused: true,
+      pauseSegments: pauseSegments
+    });
+    isPaused = true;
+    updatePauseResumeUI();
+  } catch (err) {
+    console.error("Error pausing operation:", err);
+    alert("Failed to pause. Please try again.");
+  }
+});
+
+document.getElementById("resume-operation-btn").addEventListener("click", async () => {
+  if (!currentOpLogId || !isPaused) return;
+  try {
+    const nowTs = Timestamp.now();
+    // Set pauseEnd for the last pause segment
+    const lastIndex = pauseSegments.length - 1;
+    pauseSegments[lastIndex].pauseEnd = nowTs;
+
+    // Update Firestore: set isPaused = false and updated pauseSegments
+    await updateDoc(doc(db, "logs", currentOpLogId), {
+      isPaused: false,
+      pauseSegments: pauseSegments
+    });
+    isPaused = false;
+    updatePauseResumeUI();
+  } catch (err) {
+    console.error("Error resuming operation:", err);
+    alert("Failed to resume. Please try again.");
+  }
+});
 
 document
   .getElementById("stop-operation-btn")
   .addEventListener("click", async () => {
     if (!currentOpLogId) return;
     try {
-      const logRef = doc(db, "logs", currentOpLogId);
-      await updateDoc(logRef, { endTime: Timestamp.now() });
+      // If currently paused, close out that last segment
+      if (isPaused) {
+        const nowTs = Timestamp.now();
+        const lastIndex = pauseSegments.length - 1;
+        pauseSegments[lastIndex].pauseEnd = nowTs;
+      }
+
+      // Update Firestore: set endTime and ensure pauseSegments are current
+      await updateDoc(doc(db, "logs", currentOpLogId), {
+        endTime: Timestamp.now(),
+        isPaused: false,
+        pauseSegments: pauseSegments
+      });
 
       if (opTimerInterval) {
         clearInterval(opTimerInterval);
         opTimerInterval = null;
       }
+      isPaused = false;
+      pauseSegments = [];
       document.getElementById("current-operation-section").classList.add("hidden");
       currentOpLogId = null;
       opStartTime = null;
+
       await loadActiveJobs();
       await loadLiveActivity();
     } catch (err) {
@@ -455,7 +552,7 @@ async function loadActiveJobs() {
           openOperationPanel(jobId, visibleJobNumber);
         });
       } else {
-        tr.title = "Finish current operation before starting a new one";
+        tr.title = "Finish (or resume) current operation before starting a new one";
       }
 
       tbody.appendChild(tr);
@@ -516,10 +613,14 @@ document
         user: currentUser.id,
         operation: opDocId,
         startTime: Timestamp.now(),
-        endTime: null
+        endTime: null,
+        isPaused: false,
+        pauseSegments: []
       });
       currentOpLogId = docRef.id;
       opStartTime = new Date();
+      isPaused = false;
+      pauseSegments = [];
 
       document.getElementById("operation-section").classList.add("hidden");
       await loadCurrentOperation();
@@ -1323,9 +1424,9 @@ window.printQRCode = async function (jobId) {
   }
 };
 
-/* =====================================================
-   11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
-   ===================================================== */
+// ────────────────────────────────────────────────────────────────────────────────
+// 11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
+// ────────────────────────────────────────────────────────────────────────────────
 document.getElementById("search-logs-btn").addEventListener("click", () => {
   loadLogs();
 });
@@ -1618,7 +1719,7 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
       "July","August","September","October","November","December"
     ];
     const sortedMonths = Object.keys(monthsObj).sort(
-      (a,b) => monthOrder.indexOf(a) - monthOrder.indexOf(b)
+      (a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b)
     );
 
     sortedMonths.forEach((monthName) => {
@@ -1851,10 +1952,9 @@ document.getElementById("cancel-log-btn").addEventListener("click", () => {
   document.getElementById("edit-log-modal").classList.add("hidden");
   editingLogId = null;
 });
-
+  
 /* =====================================================
    12) OPEN FROM ?jobId=… (if user scanned QR directly)
-   (Now handled inside initWorker)
    ===================================================== */
 function openFromQueryParam() {
   const params = new URLSearchParams(window.location.search);
@@ -1913,4 +2013,3 @@ document.getElementById("pin").addEventListener("keypress", (e) => {
     document.getElementById("login-btn").click();
   }
 });
-
