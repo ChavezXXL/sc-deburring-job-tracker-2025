@@ -1,3 +1,5 @@
+// app.js
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getFirestore,
@@ -30,21 +32,17 @@ const firebaseConfig = {
 initializeApp(firebaseConfig);
 const db = getFirestore();
 
-/* =====================================================
-   GLOBAL STATE
-   ===================================================== */
 let currentUser = null;
-let currentOpLogId = null;    // Firestore document ID for the currently‐running log
-let opStartTime = null;       // Local JS Date of when this operation started
-let opTimerInterval = null;   // setInterval handle for updating “Elapsed”
-let operationsCache = [];     // [{id, name}, …]
-
-let isPaused = false;         // Whether the current operation is paused
-let pauseStartTime = null;    // JS Date of when the user clicked “Pause”
-let totalPausedMs = 0;        // Cumulative paused time (in milliseconds)
+let currentOpLogId = null;
+let opStartTime = null;
+let opTimerInterval = null;
+let pausedAt = null;
+let totalPausedMillis = 0;
+let operationsCache = [];
+let isAdminImpersonating = false;
 
 /* =====================================================
-   1) UTILITY FUNCTIONS
+   1) UTILITY: FORMAT DATES → MM/DD/YYYY
    ===================================================== */
 function formatYMDtoMDY(ymd) {
   if (!ymd) return "";
@@ -56,20 +54,12 @@ function formatTimestamp(ts) {
   if (!ts || !ts.toDate) return "";
   const d = ts.toDate();
   const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const year = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
+  const day   = String(d.getDate()).padStart(2, "0");
+  const year  = d.getFullYear();
+  const hh    = String(d.getHours()).padStart(2, "0");
+  const mm    = String(d.getMinutes()).padStart(2, "0");
+  const ss    = String(d.getSeconds()).padStart(2, "0");
   return `${month}/${day}/${year} ${hh}:${mm}:${ss}`;
-}
-
-function formatMsToHMS(ms) {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 /* =====================================================
@@ -79,7 +69,6 @@ document.getElementById("login-btn").addEventListener("click", async () => {
   const usernameInput = document.getElementById("username").value.trim();
   const pinInput = document.getElementById("pin").value.trim();
 
-  // ===== Dummy Accounts for Quick Testing =====
   if (usernameInput === "admin" && pinInput === "0000") {
     currentUser = { id: "admin", role: "admin" };
     localStorage.setItem("currentUser", currentUser.id);
@@ -92,7 +81,6 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     showWorkerDashboard();
     return;
   }
-  // ============================================
 
   if (!usernameInput || !pinInput) {
     alert("Please enter both username and PIN");
@@ -111,7 +99,10 @@ document.getElementById("login-btn").addEventListener("click", async () => {
       throw new Error("User not found. Check your username.");
     }
     const userData = userSnap.data();
-    if (!userData.role || (userData.role !== "worker" && userData.role !== "admin")) {
+    if (
+      !userData.role ||
+      (userData.role !== "worker" && userData.role !== "admin")
+    ) {
       throw new Error("Your account role is not set. Contact admin.");
     }
     const storedPin = String(userData.pin || "");
@@ -119,17 +110,14 @@ document.getElementById("login-btn").addEventListener("click", async () => {
       throw new Error("Invalid PIN. Please try again.");
     }
 
-    currentUser = { id: userSnap.id, ...userData };
+    currentUser = { id: userSnap.id, ...userSnap.data() };
     localStorage.setItem("currentUser", currentUser.id);
 
-    // Hide everything first:
-    document.getElementById("login-section").classList.add("hidden");
-    document.getElementById("worker-section").classList.add("hidden");
-    document.getElementById("main-nav").classList.add("hidden");
-    document.getElementById("section-operations").classList.add("hidden");
-    document.getElementById("section-employees").classList.add("hidden");
-    document.getElementById("section-jobs").classList.add("hidden");
-    document.getElementById("section-logs").classList.add("hidden");
+    // Hide all sections
+    ["login-section", "worker-section", "main-nav",
+     "section-dashboard", "section-operations",
+     "section-employees", "section-jobs", "section-logs"]
+      .forEach(id => document.getElementById(id).classList.add("hidden"));
 
     if (currentUser.role === "worker") {
       showWorkerDashboard();
@@ -146,7 +134,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
 });
 
 /* =====================================================
-   3) AUTO-LOGIN (“Remember Me”)
+   3) AUTO-LOGIN ("Remember Me")
    ===================================================== */
 window.addEventListener("load", async () => {
   const stored = localStorage.getItem("currentUser");
@@ -182,11 +170,10 @@ document.getElementById("logout-worker").addEventListener("click", () => {
 });
 document.getElementById("logout-admin").addEventListener("click", () => {
   localStorage.removeItem("currentUser");
-  document.getElementById("main-nav").classList.add("hidden");
-  document.getElementById("section-operations").classList.add("hidden");
-  document.getElementById("section-employees").classList.add("hidden");
-  document.getElementById("section-jobs").classList.add("hidden");
-  document.getElementById("section-logs").classList.add("hidden");
+  isAdminImpersonating = false;
+  ["main-nav","section-dashboard","section-operations",
+   "section-employees","section-jobs","section-logs","worker-section"]
+    .forEach(id => document.getElementById(id).classList.add("hidden"));
   document.getElementById("login-section").classList.remove("hidden");
 });
 
@@ -194,17 +181,24 @@ document.getElementById("logout-admin").addEventListener("click", () => {
    5) WORKER DASHBOARD
    ===================================================== */
 function showWorkerDashboard() {
-  // Hide the others:
-  document.getElementById("login-section").classList.add("hidden");
-  document.getElementById("main-nav").classList.add("hidden");
-  document.getElementById("section-operations").classList.add("hidden");
-  document.getElementById("section-employees").classList.add("hidden");
-  document.getElementById("section-jobs").classList.add("hidden");
-  document.getElementById("section-logs").classList.add("hidden");
+  ["login-section","main-nav",
+   "section-dashboard","section-operations",
+   "section-employees","section-jobs","section-logs"]
+    .forEach(id => document.getElementById(id).classList.add("hidden"));
 
-  // Show worker section and greet:
   document.getElementById("worker-section").classList.remove("hidden");
   document.getElementById("worker-name").textContent = currentUser.id;
+
+  const returnBtn = document.getElementById("return-admin-btn");
+  if (isAdminImpersonating && currentUser.role === "admin") {
+    returnBtn.classList.remove("hidden");
+    returnBtn.onclick = () => {
+      isAdminImpersonating = false;
+      showAdminNav();
+    };
+  } else {
+    returnBtn.classList.add("hidden");
+  }
 
   initWorker();
 }
@@ -212,41 +206,31 @@ function showWorkerDashboard() {
 async function initWorker() {
   await loadCurrentOperation();
   await loadActiveJobs();
-
-  // <<— Here is the added call: after loadActiveJobs(), run openFromQueryParam()
-  openFromQueryParam();
-
   await loadOperationsForWorker();
   await loadLiveActivity();
 
-  document.getElementById("refresh-jobs-btn").addEventListener("click", async () => {
-    await loadActiveJobs();
-    await loadCurrentOperation();
-    await loadLiveActivity();
-  });
+  document
+    .getElementById("refresh-jobs-btn")
+    .addEventListener("click", async () => {
+      await loadActiveJobs();
+      await loadCurrentOperation();
+      await loadLiveActivity();
+    });
 
-  // Refresh “Live Activity” every 30 seconds
   setInterval(loadLiveActivity, 30000);
+  openFromQueryParam();
 }
 
 /* ——————————————————————————————————————————————————————————————————————
-   5A) CURRENT OPERATION PANEL (Worker) WITH Pause/Resume
+   5A) CURRENT OPERATION PANEL (Worker)
 —————————————————————————————————————————————————————————————————————— */
 async function loadCurrentOperation() {
-  // Clear any previous timers or paused state
   if (opTimerInterval) {
     clearInterval(opTimerInterval);
     opTimerInterval = null;
   }
-  isPaused = false;
-  pauseStartTime = null;
-  totalPausedMs = 0;
-
-  // Reset the button text/style on each load
-  const pauseResumeBtn = document.getElementById("pause-resume-btn");
-  pauseResumeBtn.textContent = "Pause";
-  pauseResumeBtn.classList.remove("btn-success");
-  pauseResumeBtn.classList.add("btn-warning");
+  pausedAt = null;
+  totalPausedMillis = 0;
 
   try {
     const logsCol = collection(db, "logs");
@@ -265,22 +249,19 @@ async function loadCurrentOperation() {
       return;
     }
 
-    // Find the most recent open log
     let chosenDoc = snapshot.docs[0];
-    snapshot.docs.forEach((docSnap) => {
-      const a = docSnap.data().startTime.toDate();
-      const b = chosenDoc.data().startTime.toDate();
-      if (a > b) chosenDoc = docSnap;
+    snapshot.docs.forEach(docSnap => {
+      if (docSnap.data().startTime.toDate() >
+          chosenDoc.data().startTime.toDate()) {
+        chosenDoc = docSnap;
+      }
     });
 
     const data = chosenDoc.data();
     currentOpLogId = chosenDoc.id;
     opStartTime = data.startTime.toDate();
+    totalPausedMillis = data.totalPausedMillis || 0;
 
-    // Load any previously-saved pausedMs
-    totalPausedMs = data.pausedMs || 0;
-
-    // Show “Job info”
     const jobSnap = await getDoc(doc(db, "jobs", data.jobId));
     let jobInfo = data.jobId;
     if (jobSnap.exists()) {
@@ -289,21 +270,26 @@ async function loadCurrentOperation() {
     }
     document.getElementById("current-op-jobinfo").textContent = jobInfo;
 
-    // Show operation name
     const opId = data.operation;
     let opName = opId;
-    const foundOp = operationsCache.find((o) => o.id === opId);
+    const foundOp = operationsCache.find(o => o.id === opId);
     if (foundOp) opName = foundOp.name;
     document.getElementById("current-op-name").textContent = opName;
 
-    // Show start time as MM/DD/YYYY hh:mm:ss
-    const startStr = formatTimestamp(Timestamp.fromDate(opStartTime));
-    document.getElementById("current-op-start").textContent = startStr;
+    document.getElementById("current-op-start").textContent =
+      formatTimestamp(Timestamp.fromDate(opStartTime));
 
-    // Start the elapsed‐timer (subtracting any paused time)
+    if (data.pausedAt) {
+      pausedAt = data.pausedAt.toDate();
+      document.getElementById("pause-operation-btn").classList.add("hidden");
+      document.getElementById("resume-operation-btn").classList.remove("hidden");
+    } else {
+      document.getElementById("pause-operation-btn").classList.remove("hidden");
+      document.getElementById("resume-operation-btn").classList.add("hidden");
+    }
+
     updateElapsedTimer();
     opTimerInterval = setInterval(updateElapsedTimer, 1000);
-
     curSec.classList.remove("hidden");
   } catch (error) {
     console.error("Error loading current operation:", error);
@@ -319,7 +305,10 @@ function updateElapsedTimer() {
     return;
   }
   const now = new Date();
-  let diffMs = now - opStartTime - totalPausedMs;
+  let diffMs = now - opStartTime - totalPausedMillis;
+  if (pausedAt) {
+    diffMs -= (now - pausedAt);
+  }
   if (diffMs < 0) diffMs = 0;
   const totalSeconds = Math.floor(diffMs / 1000);
   const hrs = Math.floor(totalSeconds / 3600);
@@ -331,87 +320,74 @@ function updateElapsedTimer() {
   document.getElementById("current-op-elapsed").textContent = `${hh}:${mm}:${ss}`;
 }
 
-// SINGLE Pause/Resume button listener
-document.getElementById("pause-resume-btn").addEventListener("click", async () => {
-  if (!currentOpLogId) return;
-
-  const pauseResumeBtn = document.getElementById("pause-resume-btn");
-  if (!isPaused) {
-    // → Pause
-    isPaused = true;
-    pauseStartTime = new Date();
-    if (opTimerInterval) {
-      clearInterval(opTimerInterval);
-      opTimerInterval = null;
-    }
-    // Update button appearance
-    pauseResumeBtn.textContent = "Resume";
-    pauseResumeBtn.classList.remove("btn-warning");
-    pauseResumeBtn.classList.add("btn-success");
-    document.getElementById("current-op-elapsed").classList.add("paused-text");
-  } else {
-    // → Resume
-    const now = new Date();
-    const pausedInterval = now - pauseStartTime;
-    totalPausedMs += pausedInterval;
-    pauseStartTime = null;
-    isPaused = false;
-
-    // Persist the updated totalPausedMs into Firestore
+document
+  .getElementById("pause-operation-btn")
+  .addEventListener("click", async () => {
+    if (!currentOpLogId) return;
+    pausedAt = new Date();
     try {
-      const logRef = doc(db, "logs", currentOpLogId);
-      await updateDoc(logRef, { pausedMs: totalPausedMs });
+      await updateDoc(doc(db, "logs", currentOpLogId), {
+        pausedAt: Timestamp.fromDate(pausedAt)
+      });
+      document.getElementById("pause-operation-btn").classList.add("hidden");
+      document.getElementById("resume-operation-btn").classList.remove("hidden");
     } catch (err) {
-      console.error("Error saving paused time:", err);
+      console.error("Error pausing operation:", err);
+      alert("Failed to pause. Please try again.");
     }
+  });
 
-    // Flip button back
-    pauseResumeBtn.textContent = "Pause";
-    pauseResumeBtn.classList.remove("btn-success");
-    pauseResumeBtn.classList.add("btn-warning");
-    document.getElementById("current-op-elapsed").classList.remove("paused-text");
-
-    // Restart the elapsed‐timer
-    updateElapsedTimer();
-    opTimerInterval = setInterval(updateElapsedTimer, 1000);
-  }
-});
-
-// STOP OPERATION
-document.getElementById("stop-operation-btn").addEventListener("click", async () => {
-  if (!currentOpLogId) return;
-  try {
-    const logRef = doc(db, "logs", currentOpLogId);
-
-    // If currently paused, finalize that paused interval
-    if (isPaused && pauseStartTime) {
-      const now = new Date();
-      totalPausedMs += now - pauseStartTime;
-      pauseStartTime = null;
-      isPaused = false;
-
-      // Persist final pausedMs
-      await updateDoc(logRef, { pausedMs: totalPausedMs });
+document
+  .getElementById("resume-operation-btn")
+  .addEventListener("click", async () => {
+    if (!currentOpLogId || !pausedAt) return;
+    const now = new Date();
+    const pausedInterval = now - pausedAt;
+    totalPausedMillis += pausedInterval;
+    try {
+      await updateDoc(doc(db, "logs", currentOpLogId), {
+        totalPausedMillis,
+        pausedAt: null
+      });
+      pausedAt = null;
+      document.getElementById("resume-operation-btn").classList.add("hidden");
+      document.getElementById("pause-operation-btn").classList.remove("hidden");
+    } catch (err) {
+      console.error("Error resuming operation:", err);
+      alert("Failed to resume. Please try again.");
     }
+  });
 
-    // Now set endTime:
-    await updateDoc(logRef, { endTime: Timestamp.now() });
-
-    if (opTimerInterval) {
-      clearInterval(opTimerInterval);
-      opTimerInterval = null;
+document
+  .getElementById("stop-operation-btn")
+  .addEventListener("click", async () => {
+    if (!currentOpLogId) return;
+    try {
+      if (pausedAt) {
+        const now = new Date();
+        totalPausedMillis += (now - pausedAt);
+      }
+      await updateDoc(doc(db, "logs", currentOpLogId), {
+        endTime: Timestamp.now(),
+        totalPausedMillis,
+        pausedAt: null
+      });
+      if (opTimerInterval) {
+        clearInterval(opTimerInterval);
+        opTimerInterval = null;
+      }
+      document.getElementById("current-operation-section").classList.add("hidden");
+      currentOpLogId = null;
+      opStartTime = null;
+      pausedAt = null;
+      totalPausedMillis = 0;
+      await loadActiveJobs();
+      await loadLiveActivity();
+    } catch (err) {
+      console.error("Error stopping operation:", err);
+      alert("Failed to stop operation. Please try again.");
     }
-    document.getElementById("current-operation-section").classList.add("hidden");
-    currentOpLogId = null;
-    opStartTime = null;
-    totalPausedMs = 0;
-    await loadActiveJobs();
-    await loadLiveActivity();
-  } catch (err) {  
-    console.error("Error stopping operation:", err);
-    alert("Failed to stop operation. Please try again.");
-  }
-});
+  });
 
 /* ——————————————————————————————————————————————————————————————————————
    5B) LIVE ACTIVITY PANEL (Worker)
@@ -444,7 +420,7 @@ async function loadLiveActivity() {
       items.push({ userId, jobDesc });
     }
 
-    items.forEach((item) => {
+    items.forEach(item => {
       const li = document.createElement("li");
       li.style.padding = "0.3rem 0";
       li.innerHTML = `<strong>${item.userId}</strong> → Job: ${item.jobDesc}`;
@@ -474,13 +450,11 @@ async function loadActiveJobs() {
       tr.innerHTML = `
         <td colspan="8" style="text-align:center; color:#555;">
           No active jobs available
-        </td>
-      `;
+        </td>`;
       tbody.appendChild(tr);
       return;
     }
 
-    // Sort by receivedDate ascending
     const docsArray = snapshot.docs.slice();
     docsArray.sort((aDoc, bDoc) => {
       const ad = aDoc.data().receivedDate
@@ -492,7 +466,7 @@ async function loadActiveJobs() {
       return ad - bd;
     });
 
-    docsArray.forEach((docSnap) => {
+    docsArray.forEach(docSnap => {
       const data = docSnap.data();
       const jobId = docSnap.id;
       const receivedFormatted = data.receivedDate
@@ -525,7 +499,7 @@ async function loadActiveJobs() {
           openOperationPanel(jobId, visibleJobNumber);
         });
       } else {
-        tr.title = "Finish or resume/pause current operation before starting a new one";
+        tr.title = "Finish current operation before starting a new one";
       }
 
       tbody.appendChild(tr);
@@ -538,8 +512,7 @@ async function loadActiveJobs() {
     tr.innerHTML = `
       <td colspan="8" style="text-align:center; color:red;">
         Failed to load active jobs
-      </td>
-    `;
+      </td>`;
     tbody.appendChild(tr);
   }
 }
@@ -547,85 +520,104 @@ async function loadActiveJobs() {
 function openOperationPanel(jobId, visibleJobNumber) {
   document.getElementById("op-job-id").textContent = visibleJobNumber;
   document.getElementById("operation-section").classList.remove("hidden");
-  document.getElementById("operation-section").scrollIntoView({ behavior: "smooth" });
+  document
+    .getElementById("operation-section")
+    .scrollIntoView({ behavior: "smooth" });
 }
 
-document.getElementById("cancel-operation-btn").addEventListener("click", () => {
-  document.getElementById("operation-section").classList.add("hidden");
-});
+document
+  .getElementById("cancel-operation-btn")
+  .addEventListener("click", () => {
+    document.getElementById("operation-section").classList.add("hidden");
+  });
 
-document.getElementById("start-operation-btn").addEventListener("click", async () => {
-  const visibleJobNumber = document.getElementById("op-job-id").textContent;
-  let pickedJobId = null;
-  document.querySelectorAll("#worker-jobs-tbody tr").forEach((row) => {
-    const textJobNum = row.cells[0]?.textContent.trim();
-    if (textJobNum === visibleJobNumber) {
-      pickedJobId = row.dataset.jobId;
+document
+  .getElementById("start-operation-btn")
+  .addEventListener("click", async () => {
+    const visibleJobNumber = document.getElementById("op-job-id").textContent;
+    let pickedJobId = null;
+    document.querySelectorAll("#worker-jobs-tbody tr").forEach(row => {
+      const textJobNum = row.cells[0]?.textContent.trim();
+      if (textJobNum === visibleJobNumber) {
+        pickedJobId = row.dataset.jobId;
+      }
+    });
+    if (!pickedJobId) {
+      alert("Could not determine job ID. Please refresh and try again.");
+      return;
+    }
+
+    const opDocId = document.getElementById("operation-select").value;
+    if (!opDocId) {
+      alert("Please select an operation.");
+      return;
+    }
+
+    try {
+      const docRef = await addDoc(collection(db, "logs"), {
+        jobId: pickedJobId,
+        user: currentUser.id,
+        operation: opDocId,
+        startTime: Timestamp.now(),
+        endTime: null,
+        pausedAt: null,
+        totalPausedMillis: 0
+      });
+      currentOpLogId = docRef.id;
+      opStartTime = new Date();
+      pausedAt = null;
+      totalPausedMillis = 0;
+      document.getElementById("operation-section").classList.add("hidden");
+      await loadCurrentOperation();
+      await loadActiveJobs();
+      await loadLiveActivity();
+    } catch (err) {
+      console.error("Error logging operation:", err);
+      alert("Failed to start operation. Please try again.");
     }
   });
-  if (!pickedJobId) {
-    alert("Could not determine job ID. Please refresh and try again.");
-    return;
-  }
-
-  const opDocId = document.getElementById("operation-select").value;
-  if (!opDocId) {
-    alert("Please select an operation.");
-    return;
-  }
-
-  try {
-    // Reset pause-state:
-    isPaused = false;
-    pauseStartTime = null;
-    totalPausedMs = 0;
-
-    // When creating a new log, set pausedMs: 0
-    const docRef = await addDoc(collection(db, "logs"), {
-      jobId: pickedJobId,
-      user: currentUser.id,
-      operation: opDocId,
-      startTime: Timestamp.now(),
-      endTime: null,
-      pausedMs: 0
-    });
-    currentOpLogId = docRef.id;
-    opStartTime = new Date();
-
-    document.getElementById("operation-section").classList.add("hidden");
-    await loadCurrentOperation();
-    await loadActiveJobs();
-    await loadLiveActivity();
-  } catch (err) {
-    console.error("Error logging operation:", err);
-    alert("Failed to start operation. Please try again.");
-  }
-});
 
 /* =====================================================
    6) ADMIN NAV + TAB SWITCHING
    ===================================================== */
 function showAdminNav() {
-  document.getElementById("login-section").classList.add("hidden");
-  document.getElementById("worker-section").classList.add("hidden");
-
+  ["login-section","worker-section"].forEach(id =>
+    document.getElementById(id).classList.add("hidden")
+  );
   document.getElementById("main-nav").classList.remove("hidden");
   document.getElementById("admin-name").textContent = currentUser.id;
 
-  document.getElementById("tab-operations").addEventListener("click", showOperationsTab);
-  document.getElementById("tab-employees").addEventListener("click", showEmployeesTab);
+  document
+    .getElementById("tab-dashboard")
+    .addEventListener("click", showDashboardTab);
+  document
+    .getElementById("tab-operations")
+    .addEventListener("click", showOperationsTab);
+  document
+    .getElementById("tab-employees")
+    .addEventListener("click", showEmployeesTab);
   document.getElementById("tab-jobs").addEventListener("click", showJobsTab);
   document.getElementById("tab-logs").addEventListener("click", showLogsTab);
 
-  // Default to the Operations tab
-  showOperationsTab();
+  document
+    .getElementById("view-worker-dashboard-btn")
+    .addEventListener("click", () => {
+      isAdminImpersonating = true;
+      showWorkerDashboard();
+    });
+
+  showDashboardTab();
 }
 
 function hideAllAdminSections() {
-  document.getElementById("section-operations").classList.add("hidden");
-  document.getElementById("section-employees").classList.add("hidden");
-  document.getElementById("section-jobs").classList.add("hidden");
-  document.getElementById("section-logs").classList.add("hidden");
+  ["section-dashboard","section-operations",
+   "section-employees","section-jobs","section-logs"]
+    .forEach(id => document.getElementById(id).classList.add("hidden"));
+}
+function showDashboardTab() {
+  hideAllAdminSections();
+  document.getElementById("section-dashboard").classList.remove("hidden");
+  loadAdminMetrics();
 }
 function showOperationsTab() {
   hideAllAdminSections();
@@ -660,7 +652,7 @@ async function loadOperationsList() {
     tbody.innerHTML = "";
     operationsCache = [];
 
-    snapshot.forEach((docSnap) => {
+    snapshot.forEach(docSnap => {
       const opId = docSnap.id;
       const opData = docSnap.data();
       const tr = document.createElement("tr");
@@ -668,8 +660,7 @@ async function loadOperationsList() {
         <td>${opData.name}</td>
         <td>
           <button class="action-btn delete" onclick="deleteOperation('${opId}')">Delete</button>
-        </td>
-      `;
+        </td>`;
       tbody.appendChild(tr);
       operationsCache.push({ id: opId, name: opData.name });
     });
@@ -692,11 +683,11 @@ async function createOperation() {
     alert("Operation name cannot be empty");
     return;
   }
-
-  // Avoid duplicates
-  const duplicate = operationsCache.find((o) => o.name.toLowerCase() === nameInput.toLowerCase());
+  const duplicate = operationsCache.find(
+    o => o.name.toLowerCase() === nameInput.toLowerCase()
+  );
   if (duplicate) {
-    alert(`“${nameInput}” already exists`);
+    alert(`${nameInput} already exists`);
     return;
   }
 
@@ -704,7 +695,7 @@ async function createOperation() {
     await addDoc(collection(db, "operations"), { name: nameInput });
     document.getElementById("new-op-name").value = "";
     await loadOperationsList();
-    alert(`Operation “${nameInput}” added`);
+    alert(`Operation "${nameInput}" added`);
   } catch (error) {
     console.error("Error creating operation:", error);
     alert("Failed to create operation");
@@ -761,7 +752,7 @@ async function loadEmployeesList() {
     const tbody = document.getElementById("employees-table-body");
     tbody.innerHTML = "";
 
-    snapshot.forEach((docSnap) => {
+    snapshot.forEach(docSnap => {
       const data = docSnap.data();
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -770,14 +761,13 @@ async function loadEmployeesList() {
         <td>
           <button class="action-btn edit" onclick="editEmployee('${docSnap.id}', '${data.role}')">Edit</button>
           <button class="action-btn delete" onclick="deleteEmployee('${docSnap.id}')">Delete</button>
-        </td>
-      `;
+        </td>`;
       tbody.appendChild(tr);
     });
 
     if (snapshot.empty) {
       const tr = document.createElement("tr");
-      tr.innerHTML = "<td colspan=\"3\">No employees found</td>";
+      tr.innerHTML = `<td colspan="3">No employees found</td>`;
       tbody.appendChild(tr);
     }
   } catch (error) {
@@ -801,7 +791,10 @@ window.deleteEmployee = async function (username) {
 };
 
 window.editEmployee = async function (username, currentRole) {
-  const newRole = prompt(`Enter new role for '${username}' (worker/admin):`, currentRole);
+  const newRole = prompt(
+    `Enter new role for '${username}' (worker/admin):`,
+    currentRole
+  );
   if (!newRole || (newRole !== "worker" && newRole !== "admin")) {
     alert("Invalid role");
     return;
@@ -820,15 +813,15 @@ window.editEmployee = async function (username, currentRole) {
    ===================================================== */
 document.getElementById("search-jobs-btn").addEventListener("click", async () => {
   const poValue   = document.getElementById("search-po-input").value.trim().toLowerCase();
+  // FIXED: Removed the undefined search-job-input element
   const partValue = document.getElementById("search-part-input").value.trim().toLowerCase();
-  const dateFrom  = document.getElementById("search-date-from").value; // YYYY-MM-DD
-  const dateTo    = document.getElementById("search-date-to").value;   // YYYY-MM-DD
+  const dateFrom  = document.getElementById("search-date-from").value;
+  const dateTo    = document.getElementById("search-date-to").value;
 
   try {
     const jobsCol = collection(db, "jobs");
     const snapshot = await getDocs(jobsCol);
 
-    // Split into active vs completed arrays
     const activeJobs = [];
     const completedJobs = [];
     snapshot.docs.forEach(docSnap => {
@@ -840,7 +833,6 @@ document.getElementById("search-jobs-btn").addEventListener("click", async () =>
       }
     });
 
-    // Render filtered active/completed
     renderActiveJobsSimple(activeJobs, { poValue, partValue, dateFrom, dateTo });
     renderCompletedJobsGrouped(completedJobs, { poValue, partValue, dateFrom, dateTo });
   } catch (err) {
@@ -848,13 +840,14 @@ document.getElementById("search-jobs-btn").addEventListener("click", async () =>
   }
 });
 
-document.getElementById("clear-jobs-btn").addEventListener("click", () => {
-  document.getElementById("search-po-input").value       = "";
-  document.getElementById("search-part-input").value     = "";
-  document.getElementById("search-date-from").value      = "";
-  document.getElementById("search-date-to").value        = "";
-  loadJobsList();
-});
+document.getElementById("clear-jobs-btn")
+  .addEventListener("click", () => {
+    document.getElementById("search-po-input").value = "";
+    document.getElementById("search-part-input").value = "";
+    document.getElementById("search-date-from").value = "";
+    document.getElementById("search-date-to").value = "";
+    loadJobsList();
+  });
 
 async function createJob() {
   try {
@@ -862,8 +855,8 @@ async function createJob() {
     const jobNum = document.getElementById("new-job-num").value.trim();
     const part   = document.getElementById("new-job-part").value.trim();
     const qtyRaw = document.getElementById("new-job-qty").value;
-    const rec    = document.getElementById("new-job-rec").value; // "YYYY-MM-DD"
-    const due    = document.getElementById("new-job-due").value; // "YYYY-MM-DD"
+    const rec    = document.getElementById("new-job-rec").value;
+    const due    = document.getElementById("new-job-due").value;
     const hot    = document.getElementById("new-job-hot").checked;
     const activeFlag = document.getElementById("new-job-active").checked;
 
@@ -882,8 +875,8 @@ async function createJob() {
       jobNumber:    jobNum,
       partNumber:   part,
       quantity:     qty,
-      receivedDate: rec,           // "YYYY-MM-DD"
-      dueDate:      due,           // "YYYY-MM-DD"
+      receivedDate: rec,
+      dueDate:      due,
       hotOrder:     hot,
       active:       activeFlag,
       title:        `${po} – ${jobNum}`,
@@ -892,9 +885,8 @@ async function createJob() {
 
     await addDoc(collection(db, "jobs"), newJobData);
 
-    ["new-job-po","new-job-num","new-job-part","new-job-qty","new-job-rec","new-job-due"].forEach(id => {
-      document.getElementById(id).value = "";
-    });
+    ["new-job-po","new-job-num","new-job-part","new-job-qty","new-job-rec","new-job-due"]
+      .forEach(id => document.getElementById(id).value = "");
     document.getElementById("new-job-hot").checked = false;
     document.getElementById("new-job-active").checked = true;
 
@@ -912,7 +904,6 @@ async function loadJobsList() {
     const jobsCol = collection(db, "jobs");
     const snapshot = await getDocs(jobsCol);
 
-    // Split into active vs completed arrays
     const activeJobs = [];
     const completedJobs = [];
     snapshot.docs.forEach(docSnap => {
@@ -924,7 +915,6 @@ async function loadJobsList() {
       }
     });
 
-    // Render unfiltered (pass empty filters)
     renderActiveJobsSimple(activeJobs, { poValue: "", partValue: "", dateFrom: "", dateTo: "" });
     renderCompletedJobsGrouped(completedJobs, { poValue: "", partValue: "", dateFrom: "", dateTo: "" });
   } catch (error) {
@@ -935,21 +925,16 @@ async function loadJobsList() {
 /**
  * Render Active Jobs in one simple table (no year/month grouping).
  * Filters by PO/Part/ReceivedDate (inclusive).
- *
- * Now includes a “QR” column (canvas + Print QR button) for each job.
  */
 function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom, dateTo }) {
   const container = document.getElementById("active-jobs-container");
   container.innerHTML = "";
 
-  // Apply filters
   const filtered = activeJobsArray.filter(({ id, data }) => {
-    // PO/Part text filters
     const poMatch   = !poValue   || (data.poNumber   || "").toLowerCase().includes(poValue);
     const partMatch = !partValue || (data.partNumber || "").toLowerCase().includes(partValue);
 
-    // Received date filtering
-    const rec = data.receivedDate || ""; // "YYYY-MM-DD"
+    const rec = data.receivedDate || "";
     let dateMatch = true;
     if (dateFrom && (!rec || rec < dateFrom)) dateMatch = false;
     if (dateTo   && (!rec || rec > dateTo))   dateMatch = false;
@@ -965,7 +950,6 @@ function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom,
     return;
   }
 
-  // Build a table
   const table = document.createElement("table");
   table.className = "table";
   table.style.margin = "0.5rem 0";
@@ -974,7 +958,6 @@ function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom,
       <tr style="background:#eef7f1;">
         <th>Job ID</th>
         <th>PO</th>
-        <th>Job #</th>
         <th>Part #</th>
         <th>Qty</th>
         <th>Received</th>
@@ -983,11 +966,9 @@ function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom,
         <th>QR</th>
         <th>Actions</th>
       </tr>
-    </thead>
-  `;
+    </thead>`;
   const tbody = document.createElement("tbody");
 
-  // Sort by receivedDate descending (most recent first)
   filtered.sort((a, b) => {
     const aRec = a.data.receivedDate || "";
     const bRec = b.data.receivedDate || "";
@@ -1007,26 +988,21 @@ function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom,
 
     const visibleJobNum = data.jobNumber || jobId;
 
-    // Each row now has a <canvas id="qr-<jobId>"></canvas> and a Print QR button
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${visibleJobNum}</td>
       <td>${data.poNumber}</td>
-      <td>${data.jobNumber}</td>
       <td>${data.partNumber}</td>
       <td>${data.quantity}</td>
       <td>${receivedFormatted}</td>
       <td>${dueFormatted}</td>
       <td>${hotText}</td>
-
-      <!-- QR column: canvas + Print button -->
       <td class="qr-cell">
         <canvas id="qr-${jobId}"></canvas><br/>
-        <button onclick="printQRCode('${jobId}')" class="btn btn-secondary mt-1 btn-sm">
+        <button onclick="printQRCode('${jobId}')" class="btn btn-secondary btn-sm">
           Print QR
         </button>
       </td>
-
       <td>
         <button class="action-btn delete" onclick="deleteJob('${jobId}')">Delete</button>
         <button class="btn btn-warning btn-sm ml-1" onclick="editJob('${jobId}')">Edit</button>
@@ -1039,7 +1015,6 @@ function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom,
   table.appendChild(tbody);
   container.appendChild(table);
 
-  // Finally, instantiate QRious for each <canvas>
   filtered.forEach(({ id: jobId }) => {
     const qrCanvas = document.getElementById(`qr-${jobId}`);
     if (!qrCanvas) return;
@@ -1057,22 +1032,16 @@ function renderActiveJobsSimple(activeJobsArray, { poValue, partValue, dateFrom,
 }
 
 /**
- * Render Completed Jobs grouped by year → month → simple list (similar to work logs).
- * Filters by PO/Part/ReceivedDate (inclusive).
+ * Render Completed Jobs grouped by year → month.
  */
 function renderCompletedJobsGrouped(completedJobsArray, { poValue, partValue, dateFrom, dateTo }) {
-  // 1) Filter first
   const filtered = completedJobsArray.filter(({ id, data }) => {
-    // PO/Part text filters
     const poMatch   = !poValue   || (data.poNumber   || "").toLowerCase().includes(poValue);
     const partMatch = !partValue || (data.partNumber || "").toLowerCase().includes(partValue);
-
-    // Received date filtering
-    const rec = data.receivedDate || ""; // "YYYY-MM-DD"
+    const rec = data.receivedDate || "";
     let dateMatch = true;
     if (dateFrom && (!rec || rec < dateFrom)) dateMatch = false;
     if (dateTo   && (!rec || rec > dateTo))   dateMatch = false;
-
     return poMatch && partMatch && dateMatch;
   });
 
@@ -1087,46 +1056,34 @@ function renderCompletedJobsGrouped(completedJobsArray, { poValue, partValue, da
     return;
   }
 
-  // 2) Group by year → month
-  const grouped = {}; 
+  const grouped = {};
   filtered.forEach(({ id: jobId, data }) => {
-    const rec = data.receivedDate || ""; // "YYYY-MM-DD"
-    let year = "Unknown Year";
-    let monthName = "Unknown Month";
-
-    if (rec && /^\d{4}-\d{2}-\d{2}$/.test(rec)) {
-      const [yy, mm, dd] = rec.split("-");
+    const rec = data.receivedDate || "";
+    let year = "Unknown Year", monthName = "Unknown Month";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rec)) {
+      const [yy, mm] = rec.split("-");
       year = yy;
-      const monthIdx = parseInt(mm, 10) - 1;
-      const monthNames = [
+      monthName = [
         "January","February","March","April","May","June",
         "July","August","September","October","November","December"
-      ];
-      monthName = monthNames[monthIdx] || `Month ${mm}`;
+      ][parseInt(mm,10)-1];
     }
-
-    if (!grouped[year]) grouped[year] = {};
-    if (!grouped[year][monthName]) grouped[year][monthName] = [];
+    grouped[year] = grouped[year] || {};
+    grouped[year][monthName] = grouped[year][monthName] || [];
     grouped[year][monthName].push({ id: jobId, data });
   });
 
-  // 3) Render each year as <details><summary>
   const sortedYears = Object.keys(grouped)
-    .filter((y) => y !== "Unknown Year")
-    .map(Number)
-    .sort((a, b) => b - a)
-    .map(String);
+    .filter(y => y !== "Unknown Year")
+    .map(Number).sort((a,b)=>b-a).map(String);
   if (grouped["Unknown Year"]) sortedYears.push("Unknown Year");
 
-  sortedYears.forEach((yearKey) => {
+  sortedYears.forEach(yearKey => {
     const yearDetails = document.createElement("details");
-    yearDetails.open = false; // collapsed by default
     yearDetails.style.marginBottom = "1rem";
-
     const yearSummary = document.createElement("summary");
     yearSummary.innerHTML = `<strong>${yearKey}</strong>`;
     yearSummary.style.fontSize = "1.2rem";
-    yearSummary.style.margin = "0.4rem 0";
     yearDetails.appendChild(yearSummary);
 
     const monthsObj = grouped[yearKey];
@@ -1134,80 +1091,65 @@ function renderCompletedJobsGrouped(completedJobsArray, { poValue, partValue, da
       "January","February","March","April","May","June",
       "July","August","September","October","November","December"
     ];
-    const sortedMonths = Object.keys(monthsObj).sort((a, b) => {
-      if (a === "Unknown Month") return 1;
-      if (b === "Unknown Month") return -1;
-      return monthOrder.indexOf(a) - monthOrder.indexOf(b);
-    });
+    Object.keys(monthsObj)
+      .sort((a,b) =>
+        a==="Unknown Month"?1:b==="Unknown Month"?-1:
+        monthOrder.indexOf(a)-monthOrder.indexOf(b)
+      )
+      .forEach(monthName => {
+        const monthDetails = document.createElement("details");
+        monthDetails.style.margin = "0.75rem 0 0.75rem 1.5rem";
+        const monthSummary = document.createElement("summary");
+        monthSummary.textContent = `${monthName} ${yearKey}`;
+        monthSummary.style.fontSize = "1.1rem";
+        monthDetails.appendChild(monthSummary);
 
-    sortedMonths.forEach((monthName) => {
-      const monthDetails = document.createElement("details");
-      monthDetails.style.marginLeft = "1rem";
-      monthDetails.open = false; // collapsed by default
-      monthDetails.style.marginBottom = "0.75rem";
+        const table = document.createElement("table");
+        table.className = "table";
+        table.innerHTML = `
+          <thead>
+            <tr style="background:#f7f7f7;">
+              <th>Job ID</th><th>PO</th><th>Part #</th><th>Qty</th>
+              <th>Received</th><th>Due</th><th>Hot</th><th>Actions</th>
+            </tr>
+          </thead>`;
+        const tbody2 = document.createElement("tbody");
 
-      const monthSummary = document.createElement("summary");
-      monthSummary.textContent = `${monthName} ${yearKey}`;
-      monthSummary.style.fontSize = "1.1rem";
-      monthSummary.style.margin = "0.3rem 0";
-      monthDetails.appendChild(monthSummary);
+        monthsObj[monthName]
+          .sort((a,b)=> {
+            const aRec = a.data.receivedDate||"";
+            const bRec = b.data.receivedDate||"";
+            if (aRec>bRec) return -1;
+            if (aRec<bRec) return 1;
+            return a.id.localeCompare(b.id);
+          })
+          .forEach(({ id: jobId, data }) => {
+            const receivedFormatted = data.receivedDate?formatYMDtoMDY(data.receivedDate):"";
+            const dueFormatted = data.dueDate?formatYMDtoMDY(data.dueDate):"";
+            const hotText = data.hotOrder?"🔥":"❌";
+            const visibleJobNum = data.jobNumber||jobId;
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td>${visibleJobNum}</td>
+              <td>${data.poNumber}</td>
+              <td>${data.partNumber}</td>
+              <td>${data.quantity}</td>
+              <td>${receivedFormatted}</td>
+              <td>${dueFormatted}</td>
+              <td>${hotText}</td>
+              <td>
+                <button class="action-btn delete" onclick="deleteJob('${jobId}')">Delete</button>
+                <button class="btn btn-warning btn-sm ml-1" onclick="editJob('${jobId}')">Edit</button>
+                <button class="btn btn-success btn-sm ml-1" onclick="markJobCompleted('${jobId}')">Complete</button>
+              </td>
+            `;
+            tbody2.appendChild(tr);
+          });
 
-      // Build a simple table for this month’s completed jobs
-      const table = document.createElement("table");
-      table.className = "table";
-      table.style.margin = "0.5rem 0";
-      table.innerHTML = `
-        <thead>
-          <tr style="background:#f7f7f7;">
-            <th>Job ID</th><th>PO</th><th>Job #</th><th>Part #</th><th>Qty</th>
-            <th>Received</th><th>Due</th><th>Hot</th><th>Actions</th>
-          </tr>
-        </thead>
-      `;
-      const tbody = document.createElement("tbody");
-
-      // Sort this month’s jobs by receivedDate descending
-      monthsObj[monthName]
-        .sort((a, b) => {
-          const aRec = a.data.receivedDate || "";
-          const bRec = b.data.receivedDate || "";
-          if (aRec > bRec) return -1;
-          if (aRec < bRec) return 1;
-          return a.id.localeCompare(b.id);
-        })
-        .forEach(({ id: jobId, data }) => {
-          const receivedFormatted = data.receivedDate
-            ? formatYMDtoMDY(data.receivedDate)
-            : "";
-          const dueFormatted = data.dueDate
-            ? formatYMDtoMDY(data.dueDate)
-            : "";
-          const hotText = data.hotOrder ? "🔥" : "❌";
-
-          const visibleJobNum = data.jobNumber || jobId;
-
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${visibleJobNum}</td>
-            <td>${data.poNumber}</td>
-            <td>${data.jobNumber}</td>
-            <td>${data.partNumber}</td>
-            <td>${data.quantity}</td>
-            <td>${receivedFormatted}</td>
-            <td>${dueFormatted}</td>
-            <td>${hotText}</td>
-            <td>
-              <button class="action-btn delete" onclick="deleteJob('${jobId}')">Delete</button>
-              <button class="btn btn-warning btn-sm ml-1" onclick="editJob('${jobId}')">Edit</button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-
-      table.appendChild(tbody);
-      monthDetails.appendChild(table);
-      yearDetails.appendChild(monthDetails);
-    });
+        table.appendChild(tbody2);
+        monthDetails.appendChild(table);
+        yearDetails.appendChild(monthDetails);
+      });
 
     container.appendChild(yearDetails);
   });
@@ -1275,12 +1217,13 @@ window.markJobCompleted = async function (jobId) {
   try {
     await updateDoc(doc(db, "jobs", jobId), { active: false });
     await addDoc(collection(db, "logs"), {
-      jobId: jobId,
+      jobId,
       user: currentUser.id,
       operation: "COMPLETED_JOB",
       startTime: Timestamp.now(),
       endTime: Timestamp.now(),
-      pausedMs: 0
+      pausedAt: null,
+      totalPausedMillis: 0
     });
     loadJobsList();
   } catch (err) {
@@ -1331,7 +1274,7 @@ window.printQRCode = async function (jobId) {
         <style>
           html, body {
             margin: 0; padding: 0;
-            height: 100%; width: 100%;
+            width: 100%; height: 100%;
           }
           body {
             font-family: sans-serif;
@@ -1389,7 +1332,7 @@ window.printQRCode = async function (jobId) {
 };
 
 /* =====================================================
-   11) WORK LOGS (Split: Active → grouped per job; Completed → year/month accordions; plus Edit via modal)
+   11) WORK LOGS
    ===================================================== */
 document.getElementById("search-logs-btn").addEventListener("click", () => {
   loadLogs();
@@ -1402,16 +1345,16 @@ document.getElementById("clear-logs-btn").addEventListener("click", () => {
   loadLogs();
 });
 
-// Keep track of which log is currently being edited
 let editingLogId = null;
+let isGroupDeleteMode = false;
+let selectedLogIds = new Set();
 
 async function loadLogs() {
   try {
-    // 1) Fetch all jobs to build jobId → { po, part, title, activeFlag }
     const jobsCol = collection(db, "jobs");
     const jobsSnap = await getDocs(jobsCol);
     const jobsMap = {};
-    jobsSnap.docs.forEach((js) => {
+    jobsSnap.docs.forEach(js => {
       const jd = js.data();
       jobsMap[js.id] = {
         po:     jd.poNumber    || "",
@@ -1421,56 +1364,45 @@ async function loadLogs() {
       };
     });
 
-    // 2) Build opId → opName map
     const opsCol = collection(db, "operations");
     const opsSnap = await getDocs(opsCol);
     const operationsMap = {};
-    opsSnap.docs.forEach((os) => {
+    opsSnap.docs.forEach(os => {
       operationsMap[os.id] = os.data().name;
     });
     operationsMap["COMPLETED_JOB"] = "Job Completed";
 
-    // 3) Grab filter inputs
     const poFilter   = document.getElementById("search-logs-po").value.trim().toLowerCase();
     const partFilter = document.getElementById("search-logs-part").value.trim().toLowerCase();
     const dateFrom   = document.getElementById("search-logs-date-from").value;
     const dateTo     = document.getElementById("search-logs-date-to").value;
 
-    // 4) Fetch all logs
     const logsCol = collection(db, "logs");
     const logsSnap = await getDocs(logsCol);
 
-    // 5) Split logs into arrays: activeJobLogs vs completedJobLogs
     const activeJobLogs    = [];
     const completedJobLogs = [];
 
-    logsSnap.docs.forEach((docSnap) => {
-      const entry = docSnap.data();
-      entry.id = docSnap.id;
+    logsSnap.docs.forEach(docSnap => {
+      const entry = { ...docSnap.data(), id: docSnap.id };
       const jobId = entry.jobId;
-      if (!jobsMap[jobId]) return; // skip if job was deleted
+      if (!jobsMap[jobId]) return;
 
-      // PO/Part filter: look at parent job’s PO/Part
       const jobData = jobsMap[jobId];
       const poMatch   = !poFilter   || jobData.po.toLowerCase().includes(poFilter);
       const partMatch = !partFilter || jobData.part.toLowerCase().includes(partFilter);
 
-      // Date filter on entry.startTime
       let dateMatch = true;
       if (dateFrom) {
         const fromMillis = new Date(dateFrom).getTime();
-        const logStart   = entry.startTime.toDate().getTime();
-        if (logStart < fromMillis) dateMatch = false;
+        if (entry.startTime.toDate().getTime() < fromMillis) dateMatch = false;
       }
       if (dateTo) {
-        // include entire “dateTo” day
         const toMillis = new Date(dateTo).getTime() + 24*3600*1000 - 1;
-        const logStart = entry.startTime.toDate().getTime();
-        if (logStart > toMillis) dateMatch = false;
+        if (entry.startTime.toDate().getTime() > toMillis) dateMatch = false;
       }
       if (!(poMatch && partMatch && dateMatch)) return;
 
-      // classify by job’s active flag
       if (jobsMap[jobId].active) {
         activeJobLogs.push(entry);
       } else {
@@ -1478,32 +1410,22 @@ async function loadLogs() {
       }
     });
 
-    // 6) Render Active Work Logs grouped by job
     renderActiveWorkLogs(activeJobLogs, operationsMap, jobsMap);
-
-    // 7) Render Completed Work Logs as year/month accordions
     renderCompletedWorkLogs(completedJobLogs, operationsMap, jobsMap);
-
   } catch (error) {
     console.error("Error loading logs:", error);
     const container = document.getElementById("logs-container");
-    container.innerHTML = "";
-    const p = document.createElement("p");
-    p.textContent = "Failed to load work logs.";
-    p.style.color = "red";
-    container.appendChild(p);
+    container.innerHTML = `<p style="color:red;">Failed to load work logs.</p>`;
   }
 }
 
 function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
-  // Ensure there's a container for active logs
   let activeDiv = document.getElementById("active-logs-container");
   if (!activeDiv) {
     const heading = document.createElement("h4");
     heading.className = "subheading";
     heading.textContent = "Active Work Logs";
     document.getElementById("logs-container").appendChild(heading);
-
     activeDiv = document.createElement("div");
     activeDiv.id = "active-logs-container";
     activeDiv.style.marginBottom = "2rem";
@@ -1519,114 +1441,93 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
     return;
   }
 
-  // Group by jobId → [entries]
   const byJob = {};
-  entriesArray.forEach((entry) => {
-    if (!byJob[entry.jobId]) byJob[entry.jobId] = [];
+  entriesArray.forEach(entry => {
+    byJob[entry.jobId] = byJob[entry.jobId] || [];
     byJob[entry.jobId].push(entry);
   });
 
-  // Sort jobs by jobTitle alphabetically
-  const jobIds = Object.keys(byJob).sort((a, b) => {
-    const titleA = (jobsMap[a]?.title || a).toLowerCase();
-    const titleB = (jobsMap[b]?.title || b).toLowerCase();
-    return titleA.localeCompare(titleB);
-  });
+  Object.keys(byJob)
+    .sort((a,b) => (jobsMap[a].title || a).localeCompare(jobsMap[b].title || b))
+    .forEach(jobId => {
+      const jobEntries = byJob[jobId];
+      const jobTitle = jobsMap[jobId].title;
+      const h5 = document.createElement("h5");
+      h5.textContent = `Job: ${jobTitle}`;
+      h5.style.margin = "1rem 0 0.5rem 0";
+      activeDiv.appendChild(h5);
 
-  // For each job, render a sub-heading + table of its entries
-  jobIds.forEach((jobId) => {
-    const jobEntries = byJob[jobId];
-    const jobData = jobsMap[jobId] || {};
-    const jobTitle = jobData.title;
+      jobEntries.sort((a,b) => a.startTime.toDate() - b.startTime.toDate());
 
-    // Sub-heading for this job
-    const h5 = document.createElement("h5");
-    h5.textContent = `Job: ${jobTitle}`;
-    h5.style.marginTop = "1rem";
-    h5.style.marginBottom = "0.5rem";
-    activeDiv.appendChild(h5);
+      const table = document.createElement("table");
+      table.className = "table";
+      table.style.fontSize = "0.9rem";
+      
+      let tableHeaders = `
+        <thead>
+          <tr style="background:#eef7f1;">
+            ${isGroupDeleteMode ? '<th>Select</th>' : ''}
+            <th>User</th><th>Operation</th><th>Duration</th>
+            <th>Paused</th><th>Start Time</th><th>End Time</th>
+            <th>Edit</th><th>Delete</th>
+          </tr>
+        </thead>`;
+      table.innerHTML = tableHeaders;
+      const tbody = document.createElement("tbody");
 
-    // Sort this job’s entries by startTime ascending
-    jobEntries.sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
+      jobEntries.forEach(entry => {
+        const pausedMillis = entry.totalPausedMillis || 0;
+        const pmH = String(Math.floor(pausedMillis/3600000)).padStart(2,"0");
+        const pmM = String(Math.floor((pausedMillis%3600000)/60000)).padStart(2,"0");
+        const pmS = String(Math.floor((pausedMillis%60000)/1000)).padStart(2,"0");
+        const pausedText = `${pmH}:${pmM}:${pmS}`;
 
-    // Build table for this job
-    const table = document.createElement("table");
-    table.className = "table";
-    table.style.fontSize = "0.9rem";
-
-    // Now add a “Paused” column
-    table.innerHTML = `
-      <thead>
-        <tr style="background:#eef7f1;">
-          <th>User</th><th>Operation</th><th>Duration</th><th>Paused</th>
-          <th>Start Time</th><th>End Time</th><th>Edit</th><th>Delete</th>
-        </tr>
-      </thead>
-    `;
-    const tbody = document.createElement("tbody");
-
-    jobEntries.forEach((entry) => {
-      // How long was this entry paused? (in ms)
-      const pausedMs = entry.pausedMs || 0;
-      const pausedText = formatMsToHMS(pausedMs);
-
-      // Compute duration EXCLUDING pausedMs
-      let durationText = "In progress";
-      if (entry.startTime && entry.endTime) {
-        const s = entry.startTime.toDate();
-        const e = entry.endTime.toDate();
-        const effectiveMs = (e - s) - pausedMs;
-        durationText = formatMsToHMS(effectiveMs < 0 ? 0 : effectiveMs);
-      }
-
-      const startStr = entry.startTime ? formatTimestamp(entry.startTime) : "-";
-      const endStr   = entry.endTime   ? formatTimestamp(entry.endTime)   : "In progress";
-      const opName   = operationsMap[entry.operation] || entry.operation;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${entry.user}</td>
-        <td>${opName}</td>
-        <td>${durationText}</td>
-        <td>${pausedText}</td>
-        <td>${startStr}</td>
-        <td>${endStr}</td>
-        <td><button class="btn btn-warning btn-sm" id="edit-log-${entry.id}">Edit</button></td>
-        <td><button class="btn btn-danger btn-sm" id="del-log-${entry.id}">Delete</button></td>
-      `;
-      tbody.appendChild(tr);
-
-      // Hook up Edit button
-      setTimeout(() => {
-        const editBtn = document.getElementById(`edit-log-${entry.id}`);
-        if (editBtn) {
-          editBtn.addEventListener("click", () => editLogEntry(entry.id));
+        let durationText = "In progress";
+        if (entry.startTime && entry.endTime) {
+          const durMs = entry.endTime.toDate() - entry.startTime.toDate() - pausedMillis;
+          const h = String(Math.floor(durMs/3600000)).padStart(2,"0");
+          const m = String(Math.floor((durMs%3600000)/60000)).padStart(2,"0");
+          const s = String(Math.floor((durMs%60000)/1000)).padStart(2,"0");
+          durationText = `${h}:${m}:${s}`;
         }
-      }, 0);
+        const startStr = entry.startTime ? formatTimestamp(entry.startTime) : "-";
+        const endStr   = entry.endTime   ? formatTimestamp(entry.endTime)   : "In progress";
+        const opName   = operationsMap[entry.operation] || entry.operation;
 
-      // Hook up Delete button
-      setTimeout(() => {
-        const delBtn = document.getElementById(`del-log-${entry.id}`);
-        if (delBtn) {
-          delBtn.addEventListener("click", () => deleteLogEntry(entry.id));
+        const tr = document.createElement("tr");
+        
+        let checkboxCell = "";
+        if (isGroupDeleteMode) {
+          const isChecked = selectedLogIds.has(entry.id) ? "checked" : "";
+          checkboxCell = `<td><input type="checkbox" class="log-checkbox" data-log-id="${entry.id}" ${isChecked} onchange="handleLogCheckboxChange(event)"></td>`;
         }
-      }, 0);
+        
+        tr.innerHTML = `
+          ${checkboxCell}
+          <td>${entry.user}</td>
+          <td>${opName}</td>
+          <td>${durationText}</td>
+          <td>${pausedText}</td>
+          <td>${startStr}</td>
+          <td>${endStr}</td>
+          <td><div class="log-actions"><button class="btn btn-warning btn-sm" onclick="editLogEntry('${entry.id}')">Edit</button></div></td>
+          <td><div class="log-actions"><button class="btn btn-danger btn-sm" onclick="deleteLogEntry('${entry.id}')">Delete</button></div></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      activeDiv.appendChild(table);
     });
-
-    table.appendChild(tbody);
-    activeDiv.appendChild(table);
-  });
 }
 
 function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
-  // Ensure there's a container for completed logs
   let completedDiv = document.getElementById("completed-logs-container");
   if (!completedDiv) {
-    const heading2 = document.createElement("h4");
-    heading2.className = "subheading";
-    heading2.textContent = "Completed Work Logs";
-    document.getElementById("logs-container").appendChild(heading2);
-
+    const heading = document.createElement("h4");
+    heading.className = "subheading";
+    heading.textContent = "Completed Work Logs";
+    document.getElementById("logs-container").appendChild(heading);
     completedDiv = document.createElement("div");
     completedDiv.id = "completed-logs-container";
     completedDiv.style.marginBottom = "2rem";
@@ -1635,205 +1536,238 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
   completedDiv.innerHTML = "";
 
   if (entriesArray.length === 0) {
-    const p2 = document.createElement("p");
-    p2.textContent = "No completed work logs.";
-    p2.style.color = "#555";
-    completedDiv.appendChild(p2);
+    const p = document.createElement("p");
+    p.textContent = "No completed work logs.";
+    p.style.color = "#555";
+    completedDiv.appendChild(p);
     return;
   }
 
-  // 1) Group by year → month → jobId → [entries]
   const grouped = {};
-  entriesArray.forEach((entry) => {
-    const jobId = entry.jobId;
+  entriesArray.forEach(entry => {
     const d = entry.startTime.toDate();
     const year = d.getFullYear();
-    const monthIndex = d.getMonth(); // 0-based
-    const monthNames = [
+    const monthName = [
       "January","February","March","April","May","June",
       "July","August","September","October","November","December"
-    ];
-    const monthName = monthNames[monthIndex];
-
-    if (!grouped[year])               grouped[year] = {};
-    if (!grouped[year][monthName])    grouped[year][monthName] = {};
-    if (!grouped[year][monthName][jobId]) grouped[year][monthName][jobId] = [];
-    grouped[year][monthName][jobId].push(entry);
+    ][d.getMonth()];
+    grouped[year] = grouped[year] || {};
+    grouped[year][monthName] = grouped[year][monthName] || {};
+    grouped[year][monthName][entry.jobId] = grouped[year][monthName][entry.jobId] || [];
+    grouped[year][monthName][entry.jobId].push(entry);
   });
 
-  // 2) Sort years descending
-  const sortedYears = Object.keys(grouped)
-    .map(Number)
-    .sort((a, b) => b - a);
+  Object.keys(grouped)
+    .map(Number).sort((a,b)=>b-a)
+    .forEach(year => {
+      const yearDetails = document.createElement("details");
+      yearDetails.style.marginBottom = "1rem";
+      const yearSummary = document.createElement("summary");
+      yearSummary.innerHTML = `<strong>${year}</strong>`;
+      yearSummary.style.fontSize = "1.25rem";
+      yearDetails.appendChild(yearSummary);
 
-  sortedYears.forEach((year) => {
-    const yearDetails = document.createElement("details");
-    yearDetails.open = false;
-    yearDetails.style.marginBottom = "1rem";
+      const monthsObj = grouped[year];
+      Object.keys(monthsObj)
+        .sort((a,b)=>["January","February","March","April","May","June",
+                      "July","August","September","October","November","December"]
+                     .indexOf(a)
+                   - ["January","February","March","April","May","June",
+                      "July","August","September","October","November","December"]
+                     .indexOf(b))
+        .forEach(monthName => {
+          const monthDetails = document.createElement("details");
+          monthDetails.style.margin = "0.75rem 0 0.75rem 1rem";
+          const monthSummary = document.createElement("summary");
+          monthSummary.textContent = `${monthName} ${year}`;
+          monthSummary.style.fontSize = "1.1rem";
+          monthDetails.appendChild(monthSummary);
 
-    const yearSummary = document.createElement("summary");
-    yearSummary.innerHTML = `<strong>${year}</strong>`;
-    yearSummary.style.fontSize = "1.25rem";
-    yearSummary.style.marginBottom = "0.5rem";
-    yearDetails.appendChild(yearSummary);
+          const jobsObj = monthsObj[monthName];
+          Object.keys(jobsObj).sort().forEach(jobId => {
+            const entries = jobsObj[jobId];
+            const jobTitle = jobsMap[jobId].title;
+            let totalSeconds = 0;
+            entries.forEach(entry => {
+              if (entry.endTime) {
+                totalSeconds += Math.floor((entry.endTime.toDate()
+                  - entry.startTime.toDate()
+                  - (entry.totalPausedMillis||0)) /1000);
+              }
+            });
+            const th = String(Math.floor(totalSeconds/3600)).padStart(2,"0");
+            const tm = String(Math.floor((totalSeconds%3600)/60)).padStart(2,"0");
+            const ts = String(totalSeconds%60).padStart(2,"0");
+            const totalDisplay = `${th}:${tm}:${ts}`;
 
-    const monthsObj = grouped[year];
-    const monthOrder = [
-      "January","February","March","April","May","June",
-      "July","August","September","October","November","December"
-    ];
-    const sortedMonths = Object.keys(monthsObj).sort(
-      (a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b)
-    );
+            const jobSection = document.createElement("div");
+            jobSection.style.margin = "0 0 1.5rem 2rem";
+            const jobHeader = document.createElement("h4");
+            jobHeader.textContent = `Job: ${jobTitle}  (Total Time: ${totalDisplay})`;
+            jobHeader.style.marginBottom = "0.5rem";
+            jobSection.appendChild(jobHeader);
 
-    sortedMonths.forEach((monthName) => {
-      const monthDetails = document.createElement("details");
-      monthDetails.style.marginLeft = "1rem";
-      monthDetails.open = false;
-      monthDetails.style.marginBottom = "0.75rem";
+            const table = document.createElement("table");
+            table.className = "table";
+            
+            let tableHeaders = `
+              <thead>
+                <tr style="background:#eef7f1;">
+                  ${isGroupDeleteMode ? '<th>Select</th>' : ''}
+                  <th>User</th><th>Operation</th><th>Duration</th>
+                  <th>Paused</th><th>Start Time</th><th>End Time</th>
+                  <th>Edit</th><th>Delete</th>
+                </tr>
+              </thead>`;
+            table.innerHTML = tableHeaders;
+            const tb = document.createElement("tbody");
 
-      const monthSummary = document.createElement("summary");
-      monthSummary.textContent = `${monthName} ${year}`;
-      monthSummary.style.fontSize = "1.1rem";
-      monthSummary.style.margin = "0.4rem 0";
-      monthDetails.appendChild(monthSummary);
+            entries.sort((a,b)=>a.startTime.toDate()-b.startTime.toDate())
+              .forEach(entry => {
+                const paused = entry.totalPausedMillis||0;
+                const pmH = String(Math.floor(paused/3600000)).padStart(2,"0");
+                const pmM = String(Math.floor((paused%3600000)/60000)).padStart(2,"0");
+                const pmS = String(Math.floor((paused%60000)/1000)).padStart(2,"0");
+                const pausedText = `${pmH}:${pmM}:${pmS}`;
 
-      const jobsObj = monthsObj[monthName];
-      const sortedJobIds = Object.keys(jobsObj).sort();
+                let durationText = "In progress";
+                if (entry.endTime) {
+                  const dur = entry.endTime.toDate()
+                    - entry.startTime.toDate() - paused;
+                  const h = String(Math.floor(dur/3600000)).padStart(2,"0");
+                  const m = String(Math.floor((dur%3600000)/60000)).padStart(2,"0");
+                  const s = String(Math.floor((dur%60000)/1000)).padStart(2,"0");
+                  durationText = `${h}:${m}:${s}`;
+                }
+                const startStr = formatTimestamp(entry.startTime);
+                const endStr   = entry.endTime?formatTimestamp(entry.endTime):"In progress";
+                const opName   = operationsMap[entry.operation]||entry.operation;
 
-      sortedJobIds.forEach((jobId) => {
-        const entries = jobsObj[jobId];
-        const jobData = jobsMap[jobId] || {};
-        const jobTitle = jobData.title;
+                const logTr = document.createElement("tr");
+                
+                let checkboxCell = "";
+                if (isGroupDeleteMode) {
+                  const isChecked = selectedLogIds.has(entry.id) ? "checked" : "";
+                  checkboxCell = `<td><input type="checkbox" class="log-checkbox" data-log-id="${entry.id}" ${isChecked} onchange="handleLogCheckboxChange(event)"></td>`;
+                }
+                
+                logTr.innerHTML = `
+                  ${checkboxCell}
+                  <td>${entry.user}</td>
+                  <td>${opName}</td>
+                  <td>${durationText}</td>
+                  <td>${pausedText}</td>
+                  <td>${startStr}</td>
+                  <td>${endStr}</td>
+                  <td><div class="log-actions"><button class="btn btn-warning btn-sm" onclick="editLogEntry('${entry.id}')">Edit</button></div></td>
+                  <td><div class="log-actions"><button class="btn btn-danger btn-sm" onclick="deleteLogEntry('${entry.id}')">Delete</button></div></td>
+                `;
+                tb.appendChild(logTr);
+              });
 
-        // Compute total time for all entries of this job
-        let totalSeconds = 0;
-        let totalPausedSeconds = 0;
-        entries.forEach((entry) => {
-          const s = entry.startTime.toDate();
-          const e = entry.endTime ? entry.endTime.toDate() : null;
-          const pMs = entry.pausedMs || 0;
-          if (s && e) {
-            totalSeconds += Math.floor((e - s) / 1000) - Math.floor(pMs / 1000);
-            totalPausedSeconds += Math.floor(pMs / 1000);
-          }
-        });
-        const th = Math.floor(totalSeconds / 3600);
-        const tm = Math.floor((totalSeconds % 3600) / 60);
-        const ts = totalSeconds % 60;
-        const totalDisplay =
-          String(th).padStart(2, "0") + ":" +
-          String(tm).padStart(2, "0") + ":" +
-          String(ts).padStart(2, "0");
+            table.appendChild(tb);
+            jobSection.appendChild(table);
+            monthDetails.appendChild(jobSection);
+          });
 
-        const pausedTh = Math.floor(totalPausedSeconds / 3600);
-        const pausedTm = Math.floor((totalPausedSeconds % 3600) / 60);
-        const pausedTs = totalPausedSeconds % 60;
-        const pausedDisplay =
-          String(pausedTh).padStart(2, "0") + ":" +
-          String(pausedTm).padStart(2, "0") + ":" +
-          String(pausedTs).padStart(2, "0");
-
-        const jobSection = document.createElement("div");
-        jobSection.className = "job-logs";
-        jobSection.style.marginLeft = "2rem";
-        jobSection.style.marginBottom = "1.5rem";
-
-        const jobHeader = document.createElement("h4");
-        jobHeader.textContent = `Job: ${jobTitle}  (Total Time: ${totalDisplay} | Total Paused: ${pausedDisplay})`;
-        jobHeader.style.marginBottom = "0.5rem";
-        jobSection.appendChild(jobHeader);
-
-        const table = document.createElement("table");
-        table.className = "table";
-        table.style.fontSize = "0.9rem";
-        table.innerHTML = `
-          <thead>
-            <tr style="background:#eef7f1;">
-              <th>User</th><th>Operation</th><th>Duration</th><th>Paused</th>
-              <th>Start Time</th><th>End Time</th><th>Edit</th><th>Delete</th>
-            </tr>
-          </thead>
-        `;
-        const tb = document.createElement("tbody");
-
-        // Sort entries by startTime ascending
-        entries.sort((a, b) => a.startTime.toDate() - b.startTime.toDate());
-
-        entries.forEach((entry) => {
-          const pMs = entry.pausedMs || 0;
-          const pausedText = formatMsToHMS(pMs);
-
-          let durationText = "In progress";
-          if (entry.startTime && entry.endTime) {
-            const s = entry.startTime.toDate();
-            const e = entry.endTime.toDate();
-            const effectiveMs = (e - s) - pMs;
-            durationText = formatMsToHMS(effectiveMs < 0 ? 0 : effectiveMs);
-          }
-          const startStr = entry.startTime ? formatTimestamp(entry.startTime) : "-";
-          const endStr   = entry.endTime   ? formatTimestamp(entry.endTime)   : "In progress";
-          const opName   = operationsMap[entry.operation] || entry.operation;
-
-          const logTr = document.createElement("tr");
-          logTr.innerHTML = `
-            <td>${entry.user}</td>
-            <td>${opName}</td>
-            <td>${durationText}</td>
-            <td>${pausedText}</td>
-            <td>${startStr}</td>
-            <td>${endStr}</td>
-            <td><button class="btn btn-warning btn-sm" id="edit-log-${entry.id}">Edit</button></td>
-            <td><button class="btn btn-danger btn-sm" id="del-log-${entry.id}">Delete</button></td>
-          `;
-          tb.appendChild(logTr);
-
-          // Hook up Edit button
-          setTimeout(() => {
-            const editBtn = document.getElementById(`edit-log-${entry.id}`);
-            if (editBtn) {
-              editBtn.addEventListener("click", () => editLogEntry(entry.id));
-            }
-          }, 0);
-
-          // Hook up Delete button
-          setTimeout(() => {
-            const delBtn = document.getElementById(`del-log-${entry.id}`);
-            if (delBtn) {
-              delBtn.addEventListener("click", () => deleteLogEntry(entry.id));
-            }
-          }, 0);
+          yearDetails.appendChild(monthDetails);
         });
 
-        table.appendChild(tb);
-        jobSection.appendChild(table);
-        monthDetails.appendChild(jobSection);
-      });
-
-      yearDetails.appendChild(monthDetails);
+      completedDiv.appendChild(yearDetails);
     });
-
-    completedDiv.appendChild(yearDetails);
-  });
 }
 
-async function deleteLogEntry(logId) {
+// FIXED: Use window.deleteLogEntry to prevent event bubbling issues
+window.deleteLogEntry = async function(logId) {
   if (!confirm("Delete this log entry?")) return;
+  
   try {
+    // Store detailed state of ALL open details elements with more specific identification
+    const openDetailsState = [];
+    document.querySelectorAll('details[open]').forEach(detail => {
+      const summary = detail.querySelector('summary');
+      if (summary) {
+        // Store both text content and position for better matching
+        const parentText = detail.parentElement?.querySelector('summary')?.textContent || '';
+        openDetailsState.push({
+          text: summary.textContent.trim(),
+          parentText: parentText.trim(),
+          level: detail.style.margin || '',
+          isYear: summary.textContent.match(/^\d{4}$/),
+          isMonth: summary.textContent.match(/^[A-Za-z]+ \d{4}$/)
+        });
+      }
+    });
+    
+    console.log('Stored open details state:', openDetailsState);
+    
     await deleteDoc(doc(db, "logs", logId));
-    loadLogs();
+    
+    // Reload logs
+    await loadLogs();
+    
+    // Restore open state with a longer delay and better matching
+    setTimeout(() => {
+      openDetailsState.forEach(state => {
+        // Try multiple strategies to find the matching element
+        let matchingDetail = null;
+        
+        // Strategy 1: Exact text match with parent context
+        if (state.parentText) {
+          const candidates = document.querySelectorAll('details summary');
+          for (let summary of candidates) {
+            if (summary.textContent.trim() === state.text) {
+              const parentSummary = summary.parentElement?.parentElement?.querySelector('summary');
+              if (parentSummary && parentSummary.textContent.trim() === state.parentText) {
+                matchingDetail = summary.parentElement;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Strategy 2: Exact text match with margin level
+        if (!matchingDetail && state.level) {
+          const candidates = document.querySelectorAll('details');
+          for (let detail of candidates) {
+            const summary = detail.querySelector('summary');
+            if (summary && summary.textContent.trim() === state.text && detail.style.margin === state.level) {
+              matchingDetail = detail;
+              break;
+            }
+          }
+        }
+        
+        // Strategy 3: Simple text match as fallback
+        if (!matchingDetail) {
+          const summary = Array.from(document.querySelectorAll('details summary')).find(s => 
+            s.textContent.trim() === state.text
+          );
+          if (summary) {
+            matchingDetail = summary.parentElement;
+          }
+        }
+        
+        if (matchingDetail) {
+          matchingDetail.open = true;
+          console.log('Restored state for:', state.text);
+        } else {
+          console.log('Could not restore state for:', state.text);
+        }
+      });
+    }, 250); // Increased delay
+    
   } catch (err) {
     console.error("Error deleting log:", err);
     alert("Failed to delete log entry.");
   }
-}
+};
 
 /* =====================================================
-   11b) EDIT LOG ENTRY (both startTime & endTime via modal)
+   11b) EDIT LOG ENTRY - FIXED: Use window.editLogEntry
    ===================================================== */
-async function editLogEntry(logId) {
+window.editLogEntry = async function(logId) {
   try {
-    // 1) Fetch the existing log
     const logRef = doc(db, "logs", logId);
     const logSnap = await getDoc(logRef);
     if (!logSnap.exists()) {
@@ -1842,12 +1776,11 @@ async function editLogEntry(logId) {
     }
     const data = logSnap.data();
 
-    // 2) Convert Firestore Timestamp → HTML datetime-local format (YYYY-MM-DDTHH:MM:SS)
     function toLocalDatetimeString(ts) {
       if (!ts) return "";
       const d = ts.toDate();
       const year  = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const month = String(d.getMonth()+1).padStart(2, "0");
       const day   = String(d.getDate()).padStart(2, "0");
       const hrs   = String(d.getHours()).padStart(2, "0");
       const mins  = String(d.getMinutes()).padStart(2, "0");
@@ -1855,35 +1788,26 @@ async function editLogEntry(logId) {
       return `${year}-${month}-${day}T${hrs}:${mins}:${secs}`;
     }
 
-    const startVal = toLocalDatetimeString(data.startTime);
-    const endVal   = data.endTime ? toLocalDatetimeString(data.endTime) : "";
-
-    // 3) Populate modal inputs
-    document.getElementById("edit-start-input").value = startVal;
-    document.getElementById("edit-end-input").value   = endVal;
+    document.getElementById("edit-start-input").value = toLocalDatetimeString(data.startTime);
+    document.getElementById("edit-end-input").value   = data.endTime ? toLocalDatetimeString(data.endTime) : "";
     editingLogId = logId;
-
-    // 4) Show modal
-    const modal = document.getElementById("edit-log-modal");
-    modal.classList.remove("hidden");
-
+    document.getElementById("edit-log-modal").classList.remove("hidden");
   } catch (err) {
     console.error("Error fetching log for edit:", err);
     alert("Could not load log entry for editing.");
   }
-}
+};
 
-// 5) “Save” button listener
+// Make handleLogCheckboxChange global so it can be called from inline events
+window.handleLogCheckboxChange = handleLogCheckboxChange;
+
 document.getElementById("save-log-btn").addEventListener("click", async () => {
   if (!editingLogId) return;
   try {
     const logRef = doc(db, "logs", editingLogId);
-
-    // Read both inputs
     const newStartStr = document.getElementById("edit-start-input").value;
     const newEndStr   = document.getElementById("edit-end-input").value;
 
-    // Helper to convert HTML datetime-local (YYYY-MM-DDTHH:mm:ss) → Firestore Timestamp
     function parseLocalDatetime(str) {
       if (!str) return null;
       const d = new Date(str);
@@ -1893,31 +1817,25 @@ document.getElementById("save-log-btn").addEventListener("click", async () => {
 
     const newStartTs = parseLocalDatetime(newStartStr);
     const newEndTs   = parseLocalDatetime(newEndStr);
-
-    // If start is invalid or empty, warn
     if (!newStartTs) {
       alert("Please provide a valid start time (YYYY-MM-DDThh:mm:ss).");
       return;
     }
 
-    // Update Firestore with both fields
     await updateDoc(logRef, {
       startTime: newStartTs,
-      endTime:   newEndTs  // if newEndTs is null, this sets endTime → null in Firestore
+      endTime:   newEndTs
     });
 
-    // 6) Close modal + clear editingLogId + refresh table
     document.getElementById("edit-log-modal").classList.add("hidden");
     editingLogId = null;
     loadLogs();
-
   } catch (err) {
     console.error("Error saving log edit:", err);
     alert("Failed to update log entry.");
   }
 });
 
-// 7) “Cancel” button listener
 document.getElementById("cancel-log-btn").addEventListener("click", () => {
   document.getElementById("edit-log-modal").classList.add("hidden");
   editingLogId = null;
@@ -1930,38 +1848,35 @@ function openFromQueryParam() {
   const params = new URLSearchParams(window.location.search);
   const jumpedJobId = params.get("jobId");
   if (!jumpedJobId) return;
-  const rows = document.querySelectorAll("#worker-jobs-tbody tr");
-  for (const row of rows) {
+  document.querySelectorAll("#worker-jobs-tbody tr").forEach(row => {
     if (row.dataset.jobId === jumpedJobId) {
       row.click();
       history.replaceState(null, "", window.location.pathname);
-      return;
     }
-  }
+  });
 }
 
 /* =====================================================
-   13) OPERATIONS FOR WORKER (populate <select>)
+   13) OPERATIONS FOR WORKER
    ===================================================== */
 async function loadOperationsForWorker() {
   try {
     if (!operationsCache.length) {
       const opsCol = collection(db, "operations");
       const snapshot = await getDocs(opsCol);
-      operationsCache = [];
-      snapshot.forEach((docSnap) => {
+      snapshot.forEach(docSnap => {
         operationsCache.push({ id: docSnap.id, name: docSnap.data().name });
       });
     }
     const select = document.getElementById("operation-select");
     select.innerHTML = "";
-    if (operationsCache.length === 0) {
+    if (!operationsCache.length) {
       select.innerHTML = `<option disabled>No operations defined</option>`;
       select.disabled = true;
       return;
     }
     select.disabled = false;
-    operationsCache.forEach((op) => {
+    operationsCache.forEach(op => {
       const opt = document.createElement("option");
       opt.value = op.id;
       opt.textContent = op.name;
@@ -1976,10 +1891,135 @@ async function loadOperationsForWorker() {
 }
 
 /* =====================================================
-   14) ENTER KEY ON PIN → TRIGGER LOGIN
+   14) DASHBOARD METRICS & CHART
    ===================================================== */
-document.getElementById("pin").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    document.getElementById("login-btn").click();
+async function loadAdminMetrics() {
+  const logsSnap = await getDocs(collection(db, "logs"));
+  const jobsSnap = await getDocs(collection(db, "jobs"));
+
+  const jobMap = {};
+  jobsSnap.docs.forEach(js => {
+    const jd = js.data();
+    jobMap[js.id] = { receivedDate: jd.receivedDate || null, completedTimestamp: null };
+  });
+
+  logsSnap.docs.forEach(ls => {
+    const d = ls.data();
+    if (d.operation === "COMPLETED_JOB" && d.endTime && jobMap[d.jobId]) {
+      const t = d.endTime.toDate().getTime();
+      if (!jobMap[d.jobId].completedTimestamp || t > jobMap[d.jobId].completedTimestamp) {
+        jobMap[d.jobId].completedTimestamp = t;
+      }
+    }
+  });
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayIndex = now.getDay();
+  const mondayOffset = (dayIndex === 0 ? -6 : 1 - dayIndex);
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+  const startOfWeek = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()).getTime();
+
+  let hoursToday = 0, hoursWeek = 0;
+  const dailyTotals = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek + i*86400000);
+    dailyTotals[`${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`] = 0;
   }
+
+  logsSnap.docs.forEach(ls => {
+    const entry = ls.data();
+    if (!entry.startTime || !entry.endTime) return;
+    const s = entry.startTime.toDate().getTime();
+    const e = entry.endTime.toDate().getTime();
+    const paused = entry.totalPausedMillis || 0;
+    const durMs = e - s - paused;
+    if (durMs <= 0) return;
+    const durHrs = durMs / 3600000;
+
+    if (s >= startOfToday) hoursToday += durHrs;
+    if (s >= startOfWeek) {
+      hoursWeek += durHrs;
+      const d = new Date(s);
+      const key = `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`;
+      if (dailyTotals[key] !== undefined) dailyTotals[key] += durHrs;
+    }
+  });
+
+  document.getElementById("metric-hours-today").textContent = hoursToday.toFixed(2);
+  document.getElementById("metric-hours-week").textContent = hoursWeek.toFixed(2);
+
+  let totalTurnaroundMs = 0, countCompletedJobs = 0;
+  Object.keys(jobMap).forEach(jobId => {
+    const recStr = jobMap[jobId].receivedDate;
+    const compTs = jobMap[jobId].completedTimestamp;
+    if (recStr && compTs) {
+      const [yy,mm,dd] = recStr.split("-");
+      const recDate = new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd)).getTime();
+      if (compTs >= recDate) {
+        totalTurnaroundMs += compTs - recDate;
+        countCompletedJobs++;
+      }
+    }
+  });
+  const avgDays = countCompletedJobs
+    ? (totalTurnaroundMs/86400000/countCompletedJobs).toFixed(1)
+    : 0;
+  document.getElementById("metric-turnaround").textContent =
+    countCompletedJobs
+      ? `${avgDays} day${avgDays!=="1.0"?"s":""}`
+      : "—";
+
+  const userTotals = {};
+  logsSnap.docs.forEach(ls => {
+    const entry = ls.data();
+    if (!entry.startTime || !entry.endTime) return;
+    const s = entry.startTime.toDate().getTime();
+    if (s < startOfWeek) return;
+    const e = entry.endTime.toDate().getTime();
+    const paused = entry.totalPausedMillis || 0;
+    const durHrs = (e - s - paused) / 3600000;
+    if (durHrs <= 0) return;
+    userTotals[entry.user] = (userTotals[entry.user]||0) + durHrs;
+  });
+  const topOperators = Object.entries(userTotals)
+    .sort((a,b)=>b[1]-a[1]).slice(0,3);
+
+  const topList = document.getElementById("metric-top-operators");
+  topList.innerHTML = "";
+  if (topOperators.length) {
+    topOperators.forEach(([user,hrs]) => {
+      const li = document.createElement("li");
+      li.textContent = `${user} – ${hrs.toFixed(2)} hrs`;
+      topList.appendChild(li);
+    });
+  } else {
+    const li = document.createElement("li");
+    li.textContent = "—";
+    topList.appendChild(li);
+  }
+
+  const ctx = document.getElementById("chart-hours-trend").getContext("2d");
+  const labels = Object.keys(dailyTotals);
+  const dataArr = labels.map(lbl => parseFloat(dailyTotals[lbl].toFixed(2)));
+  if (window.hoursTrendChart) window.hoursTrendChart.destroy();
+  window.hoursTrendChart = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{ label: "Hours Logged", data: dataArr, fill: true, tension: 0.3 }] },
+    options: {
+      scales: {
+        y: { beginAtZero: true, title:{ display:true, text:"Hours" } },
+        x: { title:{ display:true, text:"Date" } }
+      },
+      responsive: true,
+      maintainAspectRatio: false
+    }
+  });
+}
+
+/* =====================================================
+   15) ENTER KEY ON PIN → TRIGGER LOGIN
+   ===================================================== */
+document.getElementById("pin").addEventListener("keypress", e => {
+  if (e.key === "Enter") document.getElementById("login-btn").click();
 });
