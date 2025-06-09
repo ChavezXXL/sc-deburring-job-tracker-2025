@@ -5,23 +5,53 @@
   <title>SC Deburring Job Tracker</title>
   <link rel="stylesheet" href="main.css" />
 
+  <!-- Chart.js for Admin Dashboard Charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <!-- QR Scanner & QRius (for worker side, if you re-enable scanning) -->
   <script src="https://unpkg.com/html5-qrcode@2.3.7/minified/html5-qrcode.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 
   <style>
-    /* Any small overrides—your main.css can remain exactly as before: */
+    /* quick overrides (keep main.css as source of truth) */
     .hidden { display: none !important; }
-    .section { margin: 2rem auto; padding: 2rem; max-width: 900px; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .subsection { margin-bottom: 1.5rem; padding: 1rem; background: #fafafa; border-radius: 6px; }
-    .flex-row { display: flex; flex-wrap: wrap; }
+    .section {
+      margin: 2rem auto;
+      padding: 2rem;
+      max-width: 1200px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .subsection {
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: #fafafa;
+      border-radius: 6px;
+    }
+    .flex-row {
+      display: flex;
+      flex-wrap: wrap;
+    }
     .space-between { justify-content: space-between; }
     .align-center { align-items: center; }
     .mt-2 { margin-top: 1rem; }
     .mb-1 { margin-bottom: 0.5rem; }
+    .mb-2 { margin-bottom: 1rem; }
+    .mb-3 { margin-bottom: 1.5rem; }
     .mr-1 { margin-right: 0.5rem; }
     .ml-1 { margin-left: 0.5rem; }
-    .btn { padding: 0.6rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; color: #fff; background: #0a84ff; transition: background 0.2s; }
+    .btn {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #fff;
+      background: #0a84ff;
+      transition: background 0.2s;
+      font-size: 0.9rem;
+      margin: 0.2rem;
+    }
     .btn:hover { background: #0055c9; }
     .btn-secondary { background: #5e5ce6; }
     .btn-secondary:hover { background: #3b3af2; }
@@ -31,36 +61,156 @@
     .btn-warning:hover { background: #c67000; }
     .btn-success { background: #32d74b; }
     .btn-success:hover { background: #28a234; }
-    .table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-    .table th, .table td { border: 1px solid #d1d1d6; padding: 0.6rem; text-align: left; }
+    .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+    }
+    .table th, .table td {
+      border: 1px solid #d1d1d6;
+      padding: 0.6rem;
+      text-align: left;
+    }
     .table th { background: #f5f5f7; }
     .label-inline { margin-left: 0.5rem; }
-    /* When paused, show “Elapsed” in red italic */
-    .paused-text { color: #d9534f; font-style: italic; }
+    .form-control {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #d1d1d6;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .form-group {
+      margin-bottom: 0.5rem;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 0.25rem;
+      font-weight: 600;
+    }
+    .heading {
+      margin: 0 0 1rem 0;
+      color: #1d1d1f;
+    }
+    .subheading {
+      margin: 0 0 0.75rem 0;
+      color: #1d1d1f;
+    }
+
+    /* Modal styles */
+    #edit-log-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    #edit-log-modal .modal-content {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      min-width: 400px;
+      max-width: 90%;
+    }
+    #edit-log-modal .modal-actions {
+      margin-top: 1rem;
+      text-align: right;
+    }
+
+    /* Group delete styles */
+    .group-delete-controls {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 6px;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+    .log-checkbox {
+      margin-right: 0.5rem;
+    }
+
+    /* Prevent details collapse on button clicks */
+    .log-actions {
+      display: inline-block;
+    }
+    .log-actions button {
+      margin: 0 0.2rem;
+    }
+    
+    /* Prevent event bubbling on table cells with buttons */
+    .table td {
+      position: relative;
+    }
+    
+    .table td .log-actions,
+    .table td .btn,
+    .table td .log-checkbox {
+      pointer-events: auto;
+    }
+    
+    /* Ensure buttons don't trigger details toggle */
+    details table {
+      pointer-events: auto;
+    }
+    
+    details table td {
+      pointer-events: auto;
+    }
+    
+    /* Make sure checkboxes work properly */
+    .log-checkbox {
+      pointer-events: auto;
+      cursor: pointer;
+    }
+
+    @media (max-width: 768px) {
+      .flex-row { flex-direction: column; }
+      .flex-row > div { width: 100% !important; margin-right: 0 !important; margin-bottom: 0.5rem; }
+      .table, .table thead, .table tbody, .table th, .table td, .table tr {
+        display: block;
+      }
+      .table tr {
+        margin-bottom: 0.75rem;
+      }
+      .table td {
+        padding-left: 50%;
+        position: relative;
+      }
+      .table td::before {
+        position: absolute;
+        left: 1rem;
+        width: 45%;
+        white-space: nowrap;
+        font-weight: 600;
+      }
+    }
   </style>
 </head>
 <body>
-  <!-- ────────────────────────────────────────────────────────────────────────────────
-     1) LOGIN SECTION (Default visible)
-     ──────────────────────────────────────────────────────────────────────────────── -->
+  <!-- LOGIN SECTION -->
   <div id="login-section" class="section">
     <h2 class="heading">Sign In</h2>
-    <div class="form-group mb-1">
+    <div class="form-group">
       <label for="username">Username (Employee ID)</label>
       <input id="username" type="text" placeholder="Enter your username" autocomplete="username" class="form-control" />
     </div>
-    <div class="form-group mb-2">
+    <div class="form-group">
       <label for="pin">PIN</label>
       <input id="pin" type="password" placeholder="Enter your 4-digit PIN" autocomplete="current-password" maxlength="4" class="form-control" />
     </div>
-    <button id="login-btn" class="btn btn-primary btn-block">Login</button>
+    <button id="login-btn" class="btn">Login</button>
   </div>
 
-  <!-- ────────────────────────────────────────────────────────────────────────────────
-     2) WORKER DASHBOARD
-     (Shown only when a user with role="worker" logs in successfully)
-     ──────────────────────────────────────────────────────────────────────────────── -->
+  <!-- WORKER DASHBOARD -->
   <div id="worker-section" class="section hidden">
+    <button id="return-admin-btn" class="btn btn-secondary hidden mb-2">← Return to Admin</button>
+
     <div class="flex-row space-between align-center mb-2">
       <h2 class="heading">Worker Dashboard</h2>
       <div class="flex-row align-center">
@@ -69,78 +219,52 @@
       </div>
     </div>
 
-    <!-- 2A) Current Operation Panel -->
+    <!-- Current Operation Panel -->
     <div id="current-operation-section" class="subsection hidden">
       <h3 class="subheading">Current Operation</h3>
       <p>Job: <span id="current-op-jobinfo"></span></p>
       <p>Operation: <span id="current-op-name"></span></p>
       <p>Started at: <span id="current-op-start"></span></p>
       <p>Elapsed: <span id="current-op-elapsed">00:00:00</span></p>
-      <div style="margin-top: 1rem;">
-        <button id="pause-resume-btn" class="btn btn-warning ml-1">Pause</button>
-        <button id="stop-operation-btn" class="btn btn-danger ml-1">Stop Operation</button>
-      </div>
+      <button id="pause-operation-btn" class="btn btn-warning">Pause</button>
+      <button id="resume-operation-btn" class="btn btn-success hidden">Resume</button>
+      <button id="stop-operation-btn" class="btn btn-danger">Stop Operation</button>
     </div>
 
-    <!-- 2B) Live Activity Panel -->
-    <div id="live-activity-section" class="subsection mb-2 hidden">
+    <!-- Live Activity Panel -->
+    <div id="live-activity-section" class="subsection hidden">
       <h3 class="subheading">Live Activity</h3>
-      <ul id="live-activity-list" style="list-style: none; padding-left: 0;">
-        <!-- JS will append:
-             <li><strong>workerA</strong> → Job: 1234 (PO: ABC, Part: XYZ)</li> -->
-      </ul>
+      <ul id="live-activity-list" style="list-style: none; padding-left: 0;"></ul>
     </div>
 
-    <!-- 2C) Active Jobs Table -->
+    <!-- Active Jobs Table -->
     <div class="subsection">
       <h3 class="subheading">Active Jobs</h3>
       <button id="refresh-jobs-btn" class="btn btn-secondary mb-1">Refresh Jobs</button>
       <table class="table">
         <thead>
           <tr>
-            <th>Job ID</th>
-            <th>PO</th>
-            <th>Part #</th>
-            <th>Qty</th>
-            <th>Received</th>
-            <th>Due</th>
-            <th>Hot</th>
-            <th>Active</th>
+            <th>Job ID</th><th>PO</th><th>Part #</th><th>Qty</th>
+            <th>Received</th><th>Due</th><th>Hot</th><th>Active</th>
           </tr>
         </thead>
-        <tbody id="worker-jobs-tbody">
-          <!-- JS populates:
-               <tr data-job-id="XYZ" style="cursor:pointer;">
-                 <td>1234</td><td>PO-100</td><td>PRT-007</td><td>50</td>
-                 <td>10/06/2025</td><td>15/06/2025</td><td>🔥</td><td>✅</td>
-               </tr> -->
-        </tbody>
+        <tbody id="worker-jobs-tbody"></tbody>
       </table>
     </div>
 
-    <!-- 2D) Operation Selection Panel -->
-    <div id="operation-section" class="subsection hidden mt-2">
-      <h3 class="subheading">
-        Select Operation for Job <span id="op-job-id"></span>
-      </h3>
-      <div class="form-group mb-1">
+    <!-- Operation Selection Panel -->
+    <div id="operation-section" class="subsection hidden">
+      <h3 class="subheading">Select Operation for Job <span id="op-job-id"></span></h3>
+      <div class="form-group">
         <label for="operation-select">Operation</label>
-        <select id="operation-select" class="form-control">
-          <!-- JS will insert:
-               <option value="opDocId1">Cut</option>
-               <option value="opDocId2">Buff</option>
-               <option value="opDocId3">Pack</option> -->
-        </select>
+        <select id="operation-select" class="form-control"></select>
       </div>
-      <button id="start-operation-btn" class="btn btn-primary">Start Operation</button>
+      <button id="start-operation-btn" class="btn">Start Operation</button>
       <button id="cancel-operation-btn" class="btn btn-secondary ml-1">Cancel</button>
     </div>
   </div>
 
-  <!-- ────────────────────────────────────────────────────────────────────────────────
-     3) ADMIN NAV & SECTIONS
-     (Shown only when a user with role="admin" logs in successfully)
-     ──────────────────────────────────────────────────────────────────────────────── -->
+  <!-- ADMIN PANEL -->
   <div id="main-nav" class="section hidden">
     <div class="flex-row space-between align-center mb-2">
       <h2 class="heading">Admin Panel</h2>
@@ -150,127 +274,131 @@
       </div>
     </div>
 
-    <!-- 3A) Tab Buttons -->
+    <!-- Tab Buttons -->
     <div class="flex-row mb-3">
+      <button id="tab-dashboard" class="btn btn-secondary mr-1">Dashboard</button>
       <button id="tab-operations" class="btn btn-secondary mr-1">Operations</button>
       <button id="tab-employees" class="btn btn-secondary mr-1">Employees</button>
       <button id="tab-jobs" class="btn btn-secondary mr-1">Jobs</button>
-      <button id="tab-logs" class="btn btn-secondary">Work Logs</button>
+      <button id="tab-logs" class="btn btn-secondary mr-1">Work Logs</button>
+      <button id="view-worker-dashboard-btn" class="btn btn-warning ml-2">View Worker Dashboard</button>
     </div>
 
-    <!-- 3B) SECTION: Operations -->
+    <!-- DASHBOARD SECTION -->
+    <div id="section-dashboard" class="subsection hidden">
+      <h3 class="subheading">Key Metrics</h3>
+      <div class="flex-row mb-2">
+        <div style="flex:1; padding:0.5rem; border:1px solid #d1d1d6; border-radius:5px; margin-right:0.5rem; background:#fafafa;">
+          <p><strong>Total Hours Logged Today:</strong> <span id="metric-hours-today">—</span></p>
+          <p><strong>Total Hours Logged This Week:</strong> <span id="metric-hours-week">—</span></p>
+        </div>
+        <div style="flex:1; padding:0.5rem; border:1px solid #d1d1d6; border-radius:5px; margin-right:0.5rem; background:#fafafa;">
+          <p><strong>Avg. Turnaround Time per Job:</strong> <span id="metric-turnaround">—</span></p>
+        </div>
+        <div style="flex:1; padding:0.5rem; border:1px solid #d1d1d6; border-radius:5px; background:#fafafa;">
+          <p><strong>Top 3 Busiest Operators (hrs this wk):</strong></p>
+          <ol id="metric-top-operators" style="margin:0; padding-left:1rem;"></ol>
+        </div>
+      </div>
+      <h4 class="subheading">"Hours Logged" Trend (Past 7 Days)</h4>
+      <div style="height:300px; margin-top:1rem;">
+        <canvas id="chart-hours-trend"></canvas>
+      </div>
+    </div>
+
+    <!-- OPERATIONS SECTION -->
     <div id="section-operations" class="subsection hidden">
       <h3 class="subheading">Operations Management</h3>
-      <div class="form-group mb-1">
+      <div class="form-group">
         <label for="new-op-name">Operation Name</label>
         <input id="new-op-name" type="text" placeholder="Enter operation name" class="form-control" />
       </div>
-      <button id="create-op-btn" class="btn btn-primary mb-2">Add Operation</button>
+      <button id="create-op-btn" class="btn mb-2">Add Operation</button>
 
-      <h4 class="subheading mb-1">Existing Operations</h4>
+      <h4 class="subheading">Existing Operations</h4>
       <table class="table">
         <thead>
           <tr><th>Operation</th><th>Actions</th></tr>
         </thead>
-        <tbody id="operations-table-body">
-          <!-- JS will fill out:
-               <tr>
-                 <td>Cut</td>
-                 <td><button onclick="deleteOperation('opDocId1')" class="action-btn delete">Delete</button></td>
-               </tr>
-               <tr>
-                 <td>Buff</td>
-                 <td><button onclick="deleteOperation('opDocId2')" class="action-btn delete">Delete</button></td>
-               </tr> -->
-        </tbody>
+        <tbody id="operations-table-body"></tbody>
       </table>
     </div>
 
-    <!-- 3C) SECTION: Employees -->
+    <!-- EMPLOYEES SECTION -->
     <div id="section-employees" class="subsection hidden">
       <h3 class="subheading">Employee Management</h3>
-      <div class="form-group mb-1">
+      <div class="form-group">
         <label for="new-emp-username">Username (Employee ID)</label>
         <input id="new-emp-username" type="text" placeholder="Enter username" class="form-control" />
       </div>
-      <div class="form-group mb-1">
+      <div class="form-group">
         <label for="new-emp-pin">PIN</label>
         <input id="new-emp-pin" type="password" placeholder="4-digit PIN" maxlength="4" class="form-control" />
       </div>
-      <div class="form-group mb-2">
+      <div class="form-group">
         <label for="new-emp-role">Role</label>
         <select id="new-emp-role" class="form-control">
           <option value="worker">Worker</option>
           <option value="admin">Admin</option>
         </select>
       </div>
-      <button id="create-emp-btn" class="btn btn-primary mb-2">Create Employee</button>
+      <button id="create-emp-btn" class="btn mb-2">Create Employee</button>
 
-      <h4 class="subheading mb-1">Existing Employees</h4>
+      <h4 class="subheading">Existing Employees</h4>
       <table class="table">
         <thead>
           <tr><th>Username</th><th>Role</th><th>Actions</th></tr>
         </thead>
-        <tbody id="employees-table-body">
-          <!-- JS will insert rows like:
-               <tr>
-                 <td>worker123</td>
-                 <td>worker</td>
-                 <td>
-                   <button onclick="editEmployee('worker123','worker')" class="action-btn edit">Edit</button>
-                   <button onclick="deleteEmployee('worker123')" class="action-btn delete">Delete</button>
-                 </td>
-               </tr> -->
-        </tbody>
+        <tbody id="employees-table-body"></tbody>
       </table>
     </div>
 
-    <!-- 3D) SECTION: Jobs -->
+    <!-- JOBS SECTION -->
     <div id="section-jobs" class="subsection hidden">
       <h3 class="subheading">Job Management</h3>
 
       <!-- Create Job Form -->
       <div class="mb-3">
-        <div class="form-group mb-1">
+        <div class="form-group">
           <label for="new-job-po">PO Number</label>
           <input id="new-job-po" type="text" placeholder="Enter PO Number" class="form-control" />
         </div>
-        <div class="form-group mb-1">
+        <div class="form-group">
           <label for="new-job-num">Job Number</label>
           <input id="new-job-num" type="text" placeholder="Enter Job Number" class="form-control" />
         </div>
-        <div class="form-group mb-1">
+        <div class="form-group">
           <label for="new-job-part">Part Number</label>
           <input id="new-job-part" type="text" placeholder="Enter Part Number" class="form-control" />
         </div>
-        <div class="form-group mb-1">
+        <div class="form-group">
           <label for="new-job-qty">Quantity</label>
           <input id="new-job-qty" type="number" placeholder="Enter Quantity" class="form-control" />
         </div>
-        <div class="form-group mb-1">
+        <div class="form-group">
           <label for="new-job-rec">Received Date</label>
           <input id="new-job-rec" type="date" class="form-control" />
         </div>
-        <div class="form-group mb-1">
+        <div class="form-group">
           <label for="new-job-due">Due Date</label>
           <input id="new-job-due" type="date" class="form-control" />
         </div>
-        <div class="form-group form-inline mb-1">
+        <div class="form-group">
           <input id="new-job-hot" type="checkbox" />
           <label for="new-job-hot" class="label-inline">Hot Order</label>
         </div>
-        <div class="form-group form-inline mb-2">
+        <div class="form-group">
           <input id="new-job-active" type="checkbox" checked />
           <label for="new-job-active" class="label-inline">Active</label>
         </div>
-        <button id="create-job-btn" class="btn btn-primary">Create Job</button>
+        <button id="create-job-btn" class="btn">Create Job</button>
       </div>
 
       <hr />
 
       <!-- Search / Filter Jobs -->
-      <h4 class="subheading mb-1">Search / Filter Jobs</h4>
-      <div class="flex-row align-center mb-2">
+      <h4 class="subheading">Search / Filter Jobs</h4>
+      <div class="flex-row mb-2">
         <div style="flex:1; margin-right: 0.5rem;">
           <label for="search-po-input">Filter by PO</label>
           <input id="search-po-input" type="text" placeholder="Enter part of PO" class="form-control" />
@@ -287,33 +415,29 @@
           <label for="search-date-to">Received To</label>
           <input id="search-date-to" type="date" class="form-control" />
         </div>
-        <div>
-          <button id="search-jobs-btn" class="btn btn-secondary ml-1">Search</button>
+        <div style="align-self: flex-end;">
+          <button id="search-jobs-btn" class="btn btn-secondary">Search</button>
           <button id="clear-jobs-btn" class="btn btn-warning ml-1">Clear</button>
         </div>
       </div>
 
-      <!-- Active Jobs (Grouped) -->
-      <h4 class="subheading mt-2">Active Jobs (Grouped by Received Date)</h4>
-      <div id="active-jobs-container" style="margin-top: 1rem;">
-        <!-- JS will populate an accordion or show “No active jobs…” -->
-      </div>
+      <!-- Active Jobs -->
+      <h4 class="subheading">Active Jobs</h4>
+      <div id="active-jobs-container"></div>
 
       <hr style="margin: 2rem 0;" />
 
-      <!-- Completed Jobs (Grouped) -->
+      <!-- Completed Jobs -->
       <h4 class="subheading">Completed Jobs (Grouped by Received Date)</h4>
-      <div id="completed-jobs-container" style="margin-top: 1rem;">
-        <!-- JS will populate an accordion or show “No completed jobs…” -->
-      </div>
+      <div id="completed-jobs-container"></div>
     </div>
 
-    <!-- 3E) SECTION: Work Logs -->
+    <!-- WORK LOGS SECTION -->
     <div id="section-logs" class="subsection hidden">
       <h3 class="subheading">Work Logs</h3>
 
       <!-- Search / Filter Logs -->
-      <div class="flex-row align-center mb-2">
+      <div class="flex-row mb-2">
         <div style="flex:1; margin-right: 0.5rem;">
           <label for="search-logs-po">Filter by PO</label>
           <input id="search-logs-po" type="text" placeholder="Enter part of PO" class="form-control" />
@@ -330,68 +454,49 @@
           <label for="search-logs-date-to">Start Date To</label>
           <input id="search-logs-date-to" type="date" class="form-control" />
         </div>
-        <div>
-          <button id="search-logs-btn" class="btn btn-secondary ml-1">Search</button>
+        <div style="align-self: flex-end;">
+          <button id="search-logs-btn" class="btn btn-secondary">Search</button>
           <button id="clear-logs-btn" class="btn btn-warning ml-1">Clear</button>
         </div>
       </div>
 
+      <!-- Group Delete Controls -->
+      <div id="group-delete-controls" class="group-delete-controls hidden">
+        <h4>Group Delete Selected Logs</h4>
+        <p>Selected: <span id="selected-count">0</span> log entries</p>
+        <button id="delete-selected-btn" class="btn btn-danger">Delete Selected</button>
+        <button id="cancel-selection-btn" class="btn btn-secondary ml-1">Cancel Selection</button>
+        <button id="select-all-visible-btn" class="btn btn-warning ml-1">Select All Visible</button>
+      </div>
+
+      <div class="mb-2">
+        <button id="enable-group-delete-btn" class="btn btn-warning">Enable Group Delete</button>
+      </div>
+
       <!-- Logs Container -->
-      <div id="logs-container">
-        <!-- JS will populate an accordion or show “No matching work logs…” -->
+      <div id="logs-container"></div>
+    </div>
+  </div>
+
+  <!-- EDIT LOG MODAL -->
+  <div id="edit-log-modal" class="hidden">
+    <div class="modal-content">
+      <h3>Edit Log Entry</h3>
+      <div class="form-group">
+        <label for="edit-start-input">Start Time</label>
+        <input id="edit-start-input" type="datetime-local" step="1" class="form-control"/>
+      </div>
+      <div class="form-group">
+        <label for="edit-end-input">End Time</label>
+        <input id="edit-end-input" type="datetime-local" step="1" class="form-control"/>
+      </div>
+      <div class="modal-actions">
+        <button id="save-log-btn" class="btn">Save</button>
+        <button id="cancel-log-btn" class="btn btn-secondary ml-1">Cancel</button>
       </div>
     </div>
   </div>
 
-  <!-- ────────────────────────────────────────────────────────────────────────────────
-     EDIT-LOG MODAL (hidden by default)
-     ──────────────────────────────────────────────────────────────────────────────── -->
-  <div id="edit-log-modal" class="hidden" style="
-       position: fixed;
-       top: 0; left: 0; right: 0; bottom: 0;
-       background: rgba(0,0,0,0.5);
-       display: flex;
-       align-items: center;
-       justify-content: center;
-       z-index: 1000;
-     ">
-    <div style="
-         background: #fff;
-         padding: 1.5rem;
-         border-radius: 8px;
-         max-width: 400px;
-         width: 100%;
-         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-       ">
-      <h3 style="margin-top: 0; margin-bottom: 1rem;">Edit Log Entry</h3>
-      <div class="form-group" style="margin-bottom: 1rem;">
-        <label for="edit-start-input" style="display:block; margin-bottom:0.3rem;">Start Time</label>
-        <input id="edit-start-input" type="datetime-local" step="1" style="
-            width: 100%;
-            padding: 0.5rem;
-            border: 1px solid #d1d1d6;
-            border-radius: 4px;
-          "/>
-      </div>
-      <div class="form-group" style="margin-bottom: 1rem;">
-        <label for="edit-end-input" style="display:block; margin-bottom:0.3rem;">End Time</label>
-        <input id="edit-end-input" type="datetime-local" step="1" style="
-            width: 100%;
-            padding: 0.5rem;
-            border: 1px solid #d1d1d6;
-            border-radius: 4px;
-          "/>
-      </div>
-      <div style="text-align: right;">
-        <button id="save-log-btn" class="btn btn-primary" style="margin-right: 0.5rem;">Save</button>
-        <button id="cancel-log-btn" class="btn btn-secondary">Cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ────────────────────────────────────────────────────────────────────────────────
-     4) LINK TO THE MATCHING app.js  
-     ──────────────────────────────────────────────────────────────────────────────── -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
