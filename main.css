@@ -361,7 +361,38 @@
       margin: 0;
     }
   }
-  
+
+/* =====================================================
+   Operation Panel Styling
+   ===================================================== */
+
+/* Stack the title and the job-details on separate lines */
+#operation-section .subheading {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+/* Push the job details into its own block */
+#operation-section .subheading > #op-job-id {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+/* Give extra breathing room before the form controls */
+#operation-section .form-group {
+  margin-top: 1rem;
+}
+
+/* Space out the action buttons */
+#operation-section .btn {
+  margin-top: 1rem;
+  width: auto; /* so “Cancel” sits nicely beside “Start” */
+}
+
   /* =====================================================
      11) Extra Spacing for “Operations Table” (Admin)
      ===================================================== */
