@@ -1349,6 +1349,21 @@ let editingLogId = null;
 let isGroupDeleteMode = false;
 let selectedLogIds = new Set();
 
+/**
+ * Keep track of which logs are checked in group-delete mode.
+ */
+function handleLogCheckboxChange(event) {
+  const logId = event.target.dataset.logId;
+  if (event.target.checked) {
+    selectedLogIds.add(logId);
+  } else {
+    selectedLogIds.delete(logId);
+  }
+}
+
+// Expose it so inline onchange="handleLogCheckboxChange(event)" will find it
+window.handleLogCheckboxChange = handleLogCheckboxChange;
+
 async function loadLogs() {
   try {
     const jobsCol = collection(db, "jobs");
@@ -1463,7 +1478,7 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
       table.className = "table";
       table.style.fontSize = "0.9rem";
       
-      let tableHeaders = `
+      const tableHeaders = `
         <thead>
           <tr style="background:#eef7f1;">
             ${isGroupDeleteMode ? '<th>Select</th>' : ''}
@@ -1494,14 +1509,13 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
         const endStr   = entry.endTime   ? formatTimestamp(entry.endTime)   : "In progress";
         const opName   = operationsMap[entry.operation] || entry.operation;
 
-        const tr = document.createElement("tr");
-        
         let checkboxCell = "";
         if (isGroupDeleteMode) {
           const isChecked = selectedLogIds.has(entry.id) ? "checked" : "";
           checkboxCell = `<td><input type="checkbox" class="log-checkbox" data-log-id="${entry.id}" ${isChecked} onchange="handleLogCheckboxChange(event)"></td>`;
         }
-        
+
+        const tr = document.createElement("tr");
         tr.innerHTML = `
           ${checkboxCell}
           <td>${entry.user}</td>
@@ -1510,8 +1524,8 @@ function renderActiveWorkLogs(entriesArray, operationsMap, jobsMap) {
           <td>${pausedText}</td>
           <td>${startStr}</td>
           <td>${endStr}</td>
-          <td><div class="log-actions"><button class="btn btn-warning btn-sm" onclick="editLogEntry('${entry.id}')">Edit</button></div></td>
-          <td><div class="log-actions"><button class="btn btn-danger btn-sm" onclick="deleteLogEntry('${entry.id}')">Delete</button></div></td>
+          <td><button class="btn btn-warning btn-sm" onclick="editLogEntry('${entry.id}')">Edit</button></td>
+          <td><button class="btn btn-danger btn-sm" onclick="deleteLogEntry('${entry.id}')">Delete</button></td>
         `;
         tbody.appendChild(tr);
       });
@@ -1595,8 +1609,8 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
                   - (entry.totalPausedMillis||0)) /1000);
               }
             });
-            const th = String(Math.floor(totalSeconds/3600)).padStart(2,"0");
-            const tm = String(Math.floor((totalSeconds%3600)/60)).padStart(2,"0");
+            const th = String(Math.floor(totalSeconds/3600000)).padStart(2,"0");
+            const tm = String(Math.floor((totalSeconds%3600000)/60000)).padStart(2,"0");
             const ts = String(totalSeconds%60).padStart(2,"0");
             const totalDisplay = `${th}:${tm}:${ts}`;
 
@@ -1610,7 +1624,7 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
             const table = document.createElement("table");
             table.className = "table";
             
-            let tableHeaders = `
+            const tableHeaders = `
               <thead>
                 <tr style="background:#eef7f1;">
                   ${isGroupDeleteMode ? '<th>Select</th>' : ''}
@@ -1643,14 +1657,13 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
                 const endStr   = entry.endTime?formatTimestamp(entry.endTime):"In progress";
                 const opName   = operationsMap[entry.operation]||entry.operation;
 
-                const logTr = document.createElement("tr");
-                
                 let checkboxCell = "";
                 if (isGroupDeleteMode) {
                   const isChecked = selectedLogIds.has(entry.id) ? "checked" : "";
                   checkboxCell = `<td><input type="checkbox" class="log-checkbox" data-log-id="${entry.id}" ${isChecked} onchange="handleLogCheckboxChange(event)"></td>`;
                 }
-                
+
+                const logTr = document.createElement("tr");
                 logTr.innerHTML = `
                   ${checkboxCell}
                   <td>${entry.user}</td>
@@ -1659,8 +1672,8 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
                   <td>${pausedText}</td>
                   <td>${startStr}</td>
                   <td>${endStr}</td>
-                  <td><div class="log-actions"><button class="btn btn-warning btn-sm" onclick="editLogEntry('${entry.id}')">Edit</button></div></td>
-                  <td><div class="log-actions"><button class="btn btn-danger btn-sm" onclick="deleteLogEntry('${entry.id}')">Delete</button></div></td>
+                  <td><button class="btn btn-warning btn-sm" onclick="editLogEntry('${entry.id}')">Edit</button></td>
+                  <td><button class="btn btn-danger btn-sm" onclick="deleteLogEntry('${entry.id}')">Delete</button></td>
                 `;
                 tb.appendChild(logTr);
               });
@@ -1677,95 +1690,19 @@ function renderCompletedWorkLogs(entriesArray, operationsMap, jobsMap) {
     });
 }
 
-// FIXED: Use window.deleteLogEntry to prevent event bubbling issues
+// Delete a single log entry
 window.deleteLogEntry = async function(logId) {
   if (!confirm("Delete this log entry?")) return;
-  
   try {
-    // Store detailed state of ALL open details elements with more specific identification
-    const openDetailsState = [];
-    document.querySelectorAll('details[open]').forEach(detail => {
-      const summary = detail.querySelector('summary');
-      if (summary) {
-        // Store both text content and position for better matching
-        const parentText = detail.parentElement?.querySelector('summary')?.textContent || '';
-        openDetailsState.push({
-          text: summary.textContent.trim(),
-          parentText: parentText.trim(),
-          level: detail.style.margin || '',
-          isYear: summary.textContent.match(/^\d{4}$/),
-          isMonth: summary.textContent.match(/^[A-Za-z]+ \d{4}$/)
-        });
-      }
-    });
-    
-    console.log('Stored open details state:', openDetailsState);
-    
     await deleteDoc(doc(db, "logs", logId));
-    
-    // Reload logs
     await loadLogs();
-    
-    // Restore open state with a longer delay and better matching
-    setTimeout(() => {
-      openDetailsState.forEach(state => {
-        // Try multiple strategies to find the matching element
-        let matchingDetail = null;
-        
-        // Strategy 1: Exact text match with parent context
-        if (state.parentText) {
-          const candidates = document.querySelectorAll('details summary');
-          for (let summary of candidates) {
-            if (summary.textContent.trim() === state.text) {
-              const parentSummary = summary.parentElement?.parentElement?.querySelector('summary');
-              if (parentSummary && parentSummary.textContent.trim() === state.parentText) {
-                matchingDetail = summary.parentElement;
-                break;
-              }
-            }
-          }
-        }
-        
-        // Strategy 2: Exact text match with margin level
-        if (!matchingDetail && state.level) {
-          const candidates = document.querySelectorAll('details');
-          for (let detail of candidates) {
-            const summary = detail.querySelector('summary');
-            if (summary && summary.textContent.trim() === state.text && detail.style.margin === state.level) {
-              matchingDetail = detail;
-              break;
-            }
-          }
-        }
-        
-        // Strategy 3: Simple text match as fallback
-        if (!matchingDetail) {
-          const summary = Array.from(document.querySelectorAll('details summary')).find(s => 
-            s.textContent.trim() === state.text
-          );
-          if (summary) {
-            matchingDetail = summary.parentElement;
-          }
-        }
-        
-        if (matchingDetail) {
-          matchingDetail.open = true;
-          console.log('Restored state for:', state.text);
-        } else {
-          console.log('Could not restore state for:', state.text);
-        }
-      });
-    }, 250); // Increased delay
-    
   } catch (err) {
     console.error("Error deleting log:", err);
     alert("Failed to delete log entry.");
   }
 };
 
-/* =====================================================
-   11b) EDIT LOG ENTRY - FIXED: Use window.editLogEntry
-   ===================================================== */
+// Edit a single log entry
 window.editLogEntry = async function(logId) {
   try {
     const logRef = doc(db, "logs", logId);
@@ -1797,9 +1734,6 @@ window.editLogEntry = async function(logId) {
     alert("Could not load log entry for editing.");
   }
 };
-
-// Make handleLogCheckboxChange global so it can be called from inline events
-window.handleLogCheckboxChange = handleLogCheckboxChange;
 
 document.getElementById("save-log-btn").addEventListener("click", async () => {
   if (!editingLogId) return;
