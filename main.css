@@ -181,37 +181,40 @@ input:focus, select:focus {
 }
 
 /* =====================================================
-   8) Operation Panel Styling (Highlighted Bubbles)
+   8) Operation Panel Styling (Highlighted Bubble)
    ===================================================== */
 #operation-section {
-  background: var(--color-light);
-  padding: calc(var(--spacing) * 1.5);
+  background: var(--color-card);
+  padding: 2rem;
+  border: 2px solid var(--color-primary);
   border-radius: var(--radius);
-  box-shadow: 0 2px 10px rgba(10,132,255,0.1);
+  box-shadow: 0 4px 12px rgba(10,132,255,0.15);
   margin-top: var(--spacing);
   text-align: center;
 }
 #operation-section .subheading {
   font-size: 1.5rem;
   font-weight: 600;
-  margin-bottom: var(--spacing);
+  color: var(--color-primary);
+  margin-bottom: 1rem;
 }
 #operation-section #op-job-id {
   display: inline-block;
-  background: var(--color-primary);
-  color: #ffffff;
+  background: #ffffff;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
   padding: 0.5rem 1rem;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 600;
   border-radius: 999px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-  margin-bottom: var(--spacing);
+  box-shadow: 0 2px 6px rgba(10,132,255,0.2);
+  margin-bottom: 1rem;
 }
 #operation-section .form-group {
-  margin-top: var(--spacing);
+  margin-top: 1rem;
 }
 #operation-section .btn {
-  margin: 0 var(--spacing) var(--spacing) 0;
+  margin: 0 1rem 1rem 0;
   padding: 0.5rem 1rem;
   font-size: 0.9rem;
 }
