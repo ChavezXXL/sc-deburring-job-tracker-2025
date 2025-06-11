@@ -1,30 +1,45 @@
 /* main.css */
 
 /* =====================================================
-   1) Color & Font Variables
+   8) Operation Panel Styling (Tesla/Apple Inspired)
    ===================================================== */
-:root {
-  --color-bg:            #f2f2f5;
-  --color-card:          #ffffff;
-  --color-light:         #fafafb;
-  --color-primary:       #0a84ff;
-  --color-primary-hover: #0055c9;
-  --color-secondary:     #5e5ce6;
-  --color-secondary-hover: #3b3af2;
-  --color-danger:        #ff3b30;
-  --color-danger-hover:  #c22a1e;
-  --color-warning:       #ff9500;
-  --color-warning-hover: #c67000;
-  --color-success:       #32d74b;
-  --color-border:        #d1d1d6;
-  --color-muted:         #6e6e73;
-  --font-base:           "SF Pro Text","Segoe UI",Tahoma,Arial,sans-serif;
-  --font-size-base:      1rem;
-  --radius:              8px;
-  --spacing:             1rem;
+#operation-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  background: var(--color-light);
+  border: none;
+  border-radius: var(--radius);
+  padding: calc(var(--spacing) * 1.5);
+  gap: var(--spacing);
+  margin-top: var(--spacing);
+}
+#operation-section .subheading {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 0.5rem;
+}
+#operation-section #op-job-id {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  background: var(--color-card);
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text);
+  margin-bottom: var(--spacing);
+}
+#operation-section .form-group {
+  margin-top: 1rem;
+}
+#operation-section .btn {
+  margin-right: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
 }
 
-/* =====================================================
    2) Global Reset & Typography
    ===================================================== */
 *, *::before, *::after {
