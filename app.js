@@ -435,7 +435,7 @@ async function loadLiveActivity() {
 
 /* ——————————————————————————————————————————————————————————————————————
    5C) LOAD ACTIVE JOBS (Worker)
-—————————————————————————————————————————————————————————————————————— */
+   —————————————————————————————————————————————————————————————————————— */
 async function loadActiveJobs() {
   try {
     const jobsCol = collection(db, "jobs");
@@ -517,12 +517,31 @@ async function loadActiveJobs() {
   }
 }
 
-function openOperationPanel(jobId, visibleJobNumber) {
-  document.getElementById("op-job-id").textContent = visibleJobNumber;
-  document.getElementById("operation-section").classList.remove("hidden");
-  document
-    .getElementById("operation-section")
-    .scrollIntoView({ behavior: "smooth" });
+/**
+ * Enhanced Start Operation panel opener.
+ */
+async function openOperationPanel(jobId, visibleJobNumber) {
+  try {
+    // Fetch full job details
+    const jobRef = doc(db, "jobs", jobId);
+    const jobSnap = await getDoc(jobRef);
+
+    let details = visibleJobNumber;
+    if (jobSnap.exists()) {
+      const { poNumber, partNumber, quantity } = jobSnap.data();
+      details = `${visibleJobNumber} (PO: ${poNumber || "—"}, Part: ${partNumber || "—"}, Qty: ${quantity != null ? quantity : "—"})`;
+    }
+
+    document.getElementById("op-job-id").textContent = details;
+  } catch (err) {
+    console.error("Error fetching job details:", err);
+    // Fallback to just job number
+    document.getElementById("op-job-id").textContent = visibleJobNumber;
+  }
+
+  const section = document.getElementById("operation-section");
+  section.classList.remove("hidden");
+  section.scrollIntoView({ behavior: "smooth" });
 }
 
 document
