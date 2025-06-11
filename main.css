@@ -44,9 +44,13 @@ html, body {
 input, select, button, table {
   page-break-inside: avoid;
 }
-
-a { color: var(--color-primary); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
 
 /* =====================================================
    3) Utility & Layout Classes
@@ -82,13 +86,13 @@ a:hover { text-decoration: underline; }
 .btn:active { transform: translateY(0); }
 .btn.btn-secondary { background-color: var(--color-secondary); }
 .btn.btn-secondary:hover { background-color: var(--color-secondary-hover); }
-.btn.btn-danger    { background-color: var(--color-danger); }
+.btn.btn-danger { background-color: var(--color-danger); }
 .btn.btn-danger:hover { background-color: var(--color-danger-hover); }
-.btn.btn-warning   { background-color: var(--color-warning); }
+.btn.btn-warning { background-color: var(--color-warning); }
 .btn.btn-warning:hover { background-color: var(--color-warning-hover); }
-.btn.btn-success   { background-color: var(--color-success); }
+.btn.btn-success { background-color: var(--color-success); }
 .btn.btn-success:hover { background-color: var(--color-success-hover); }
-.btn-block         { display: block; width: 100%; }
+.btn-block { display: block; width: 100%; }
 
 /* =====================================================
    5) Section Containers
@@ -120,7 +124,8 @@ a:hover { text-decoration: underline; }
 .form-group { margin-bottom: var(--spacing); }
 .form-group label { display: block; margin-bottom: 0.25rem; font-weight: 500; color: #2c2c2e; }
 input[type="text"], input[type="password"], input[type="date"], input[type="number"], select {
-  width: 100%; padding: 0.6rem 0.8rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-light);
@@ -129,43 +134,61 @@ input[type="text"], input[type="password"], input[type="date"], input[type="numb
 input:focus, select:focus { border-color: var(--color-primary); box-shadow: 0 0 6px rgba(10,132,255,0.3); outline: none; }
 
 /* =====================================================
-   Operation Panel Styling
+   8) Operation Panel Styling (Tesla/Apple Inspired)
    ===================================================== */
 #operation-section {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  align-items: center;
   background: var(--color-light);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: var(--spacing);
+  padding: calc(var(--spacing) * 1.5);
+  gap: var(--spacing);
   margin-top: var(--spacing);
 }
 #operation-section .subheading {
-  font-size: 1.375rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  grid-column: 1 / -1;
 }
 #operation-section #op-job-id {
-  display: inline-block;
   background: var(--color-card);
-  padding: 0.75rem 1.25rem;
+  padding: 1rem;
   border-left: 4px solid var(--color-primary);
   border-radius: var(--radius);
   font-weight: 500;
   color: var(--color-text);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
-#operation-section .form-group { margin-top: 1rem; }
-#operation-section .btn { margin-top: 1rem; width: auto; }
+#operation-section .form-group {
+  margin-top: 0;
+}
+#operation-section .btn {
+  margin-top: var(--spacing);
+  width: auto;
+}
 
 /* =====================================================
-   8) Tables with Stripe & Hover
+   9) Tables with Stripe & Hover
    ===================================================== */
-table { width: 100%; border-collapse: collapse; margin-top: var(--spacing); font-size: 0.95rem; }
-th, td { border: 1px solid var(--color-border); padding: 0.75rem; text-align: left; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--spacing);
+  font-size: 0.95rem;
+}
+th, td {
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+  text-align: left;
+}
 thead { background: var(--color-light); }
 tbody tr:nth-child(even) { background: rgba(0,0,0,0.02); }
 tbody tr:hover { background: rgba(10,132,255,0.05); }
 
 /* =====================================================
-   QR & Action Buttons in Tables
+   10) QR & Action Buttons in Tables
    ===================================================== */
 .qr-cell { text-align: center; padding: var(--spacing) 0; }
 .qr-cell canvas { display: block; margin: 0 auto 0.5rem; }
@@ -176,7 +199,7 @@ tbody tr:hover { background: rgba(10,132,255,0.05); }
 .action-btn.delete:hover { background-color: var(--color-danger-hover); }
 
 /* =====================================================
-   9) Responsive Adjustments
+   11) Responsive Adjustments
    ===================================================== */
 @media (max-width: 768px) {
   .flex-row { flex-direction: column; gap: 0.5rem; }
@@ -184,10 +207,12 @@ tbody tr:hover { background: rgba(10,132,255,0.05); }
   tr { margin-bottom: 0.75rem; }
   td { padding-left: 50%; position: relative; }
   td::before { position: absolute; left: 1rem; width: 45%; white-space: nowrap; font-weight: 600; }
+  /* Operation panel becomes vertical */
+  #operation-section { grid-template-columns: 1fr; }
 }
 
 /* =====================================================
-   10) Print Styles
+   12) Print Styles
    ===================================================== */
 @media print {
   body * { visibility: hidden; }
