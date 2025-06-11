@@ -521,6 +521,9 @@ async function loadActiveJobs() {
  * Enhanced Start Operation panel opener.
  */
 async function openOperationPanel(jobId, visibleJobNumber) {
+  // Store the actual job ID globally
+  selectedJobId = jobId;
+  
   try {
     // Fetch full job details
     const jobRef = doc(db, "jobs", jobId);
@@ -547,21 +550,15 @@ async function openOperationPanel(jobId, visibleJobNumber) {
 document
   .getElementById("cancel-operation-btn")
   .addEventListener("click", () => {
+    selectedJobId = null; // Clear the stored job ID
     document.getElementById("operation-section").classList.add("hidden");
   });
 
 document
   .getElementById("start-operation-btn")
   .addEventListener("click", async () => {
-    const visibleJobNumber = document.getElementById("op-job-id").textContent;
-    let pickedJobId = null;
-    document.querySelectorAll("#worker-jobs-tbody tr").forEach(row => {
-      const textJobNum = row.cells[0]?.textContent.trim();
-      if (textJobNum === visibleJobNumber) {
-        pickedJobId = row.dataset.jobId;
-      }
-    });
-    if (!pickedJobId) {
+    // Use the stored job ID instead of trying to parse it from the display text
+    if (!selectedJobId) {
       alert("Could not determine job ID. Please refresh and try again.");
       return;
     }
@@ -574,7 +571,7 @@ document
 
     try {
       const docRef = await addDoc(collection(db, "logs"), {
-        jobId: pickedJobId,
+        jobId: selectedJobId,
         user: currentUser.id,
         operation: opDocId,
         startTime: Timestamp.now(),
@@ -582,10 +579,13 @@ document
         pausedAt: null,
         totalPausedMillis: 0
       });
+      
       currentOpLogId = docRef.id;
       opStartTime = new Date();
       pausedAt = null;
       totalPausedMillis = 0;
+      selectedJobId = null; // Clear the stored job ID
+      
       document.getElementById("operation-section").classList.add("hidden");
       await loadCurrentOperation();
       await loadActiveJobs();
