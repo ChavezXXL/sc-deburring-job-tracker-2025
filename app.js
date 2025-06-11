@@ -521,9 +521,6 @@ async function loadActiveJobs() {
  * Enhanced Start Operation panel opener.
  */
 async function openOperationPanel(jobId, visibleJobNumber) {
-  // Store the actual job ID globally
-  selectedJobId = jobId;
-  
   try {
     // Fetch full job details
     const jobRef = doc(db, "jobs", jobId);
@@ -535,30 +532,43 @@ async function openOperationPanel(jobId, visibleJobNumber) {
       details = `${visibleJobNumber} (PO: ${poNumber || "—"}, Part: ${partNumber || "—"}, Qty: ${quantity != null ? quantity : "—"})`;
     }
 
+    // Store the job ID as a data attribute on the operation section
+    const section = document.getElementById("operation-section");
+    section.dataset.jobId = jobId;
+    
     document.getElementById("op-job-id").textContent = details;
+    section.classList.remove("hidden");
+    section.scrollIntoView({ behavior: "smooth" });
   } catch (err) {
     console.error("Error fetching job details:", err);
+    // Store the job ID even if details fetch fails
+    const section = document.getElementById("operation-section");
+    section.dataset.jobId = jobId;
+    
     // Fallback to just job number
     document.getElementById("op-job-id").textContent = visibleJobNumber;
+    section.classList.remove("hidden");
+    section.scrollIntoView({ behavior: "smooth" });
   }
-
-  const section = document.getElementById("operation-section");
-  section.classList.remove("hidden");
-  section.scrollIntoView({ behavior: "smooth" });
 }
 
 document
   .getElementById("cancel-operation-btn")
   .addEventListener("click", () => {
-    selectedJobId = null; // Clear the stored job ID
-    document.getElementById("operation-section").classList.add("hidden");
+    // Clear the stored job ID from the section
+    const section = document.getElementById("operation-section");
+    section.dataset.jobId = "";
+    section.classList.add("hidden");
   });
 
 document
   .getElementById("start-operation-btn")
   .addEventListener("click", async () => {
-    // Use the stored job ID instead of trying to parse it from the display text
-    if (!selectedJobId) {
+    // Get the stored job ID from the operation section
+    const section = document.getElementById("operation-section");
+    const pickedJobId = section.dataset.jobId;
+    
+    if (!pickedJobId) {
       alert("Could not determine job ID. Please refresh and try again.");
       return;
     }
@@ -571,7 +581,7 @@ document
 
     try {
       const docRef = await addDoc(collection(db, "logs"), {
-        jobId: selectedJobId,
+        jobId: pickedJobId,
         user: currentUser.id,
         operation: opDocId,
         startTime: Timestamp.now(),
@@ -584,9 +594,11 @@ document
       opStartTime = new Date();
       pausedAt = null;
       totalPausedMillis = 0;
-      selectedJobId = null; // Clear the stored job ID
       
-      document.getElementById("operation-section").classList.add("hidden");
+      // Clear the stored job ID and hide the section
+      section.dataset.jobId = "";
+      section.classList.add("hidden");
+      
       await loadCurrentOperation();
       await loadActiveJobs();
       await loadLiveActivity();
