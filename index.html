@@ -1,321 +1,405 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>SC Deburring Job Tracker</title>
-  <link rel="stylesheet" href="main.css" />
-
-  <!-- Chart.js for Admin Dashboard Charts -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- QR Scanner & QRius (for worker side, if you re-enable scanning) -->
-  <script src="https://unpkg.com/html5-qrcode@2.3.7/minified/html5-qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-
+  <meta charset="utf-8" />
+  <title>SC Deburring — Kinetic Glass</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    /* quick overrides (keep main.css as source of truth) */
-    .hidden { display: none !important; }
-    .section {
-      margin: 2rem auto;
-      padding: 2rem;
-      max-width: 1200px;
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    :root{
+      --bg-1:#0a0f1d;
+      --bg-2:#0e1730;
+      --glass:#ffffff20;
+      --glass-brd:#ffffff35;
+      --txt:#e8eefc;
+      --muted:#a8b3cf;
+      --brand:#6ee7ff;
+      --brand-2:#9b8cff;
+      --warn:#ffc857;
+      --danger:#ff6b6b;
+      --ok:#72e7a6;
     }
-    .subsection {
-      margin-bottom: 1.5rem;
-      padding: 1rem;
-      background: #fafafa;
-      border-radius: 6px;
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji", "Segoe UI Symbol";
+      color:var(--txt); background: radial-gradient(1200px 900px at 20% 10%, #243b55 0%, transparent 60%),
+                          radial-gradient(1200px 900px at 80% 90%, #141e30 0%, transparent 60%), var(--bg-1);
+      overflow-y:auto;
     }
-    .flex-row {
-      display: flex;
-      flex-wrap: wrap;
+    body::before{
+      content:""; position:fixed; inset:-20vmax;
+      background: conic-gradient(from 180deg at 50% 50%, #00e7ff40, #7c5cff40, #00ffa340, #00e7ff40);
+      filter: blur(120px) saturate(140%);
+      animation: auroraShift 16s linear infinite;
+      z-index:-1;
     }
-    .space-between { justify-content: space-between; }
-    .align-center { align-items: center; }
-    .mt-2 { margin-top: 1rem; }
-    .mb-1 { margin-bottom: 0.5rem; }
-    .mb-2 { margin-bottom: 1rem; }
-    .mb-3 { margin-bottom: 1.5rem; }
-    .mr-1 { margin-right: 0.5rem; }
-    .ml-1 { margin-left: 0.5rem; }
-    .btn {
-      padding: 0.6rem 1.2rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      color: #fff;
-      background: #0a84ff;
-      transition: background 0.2s;
-      font-size: 0.9rem;
-      margin: 0.2rem;
+    @keyframes auroraShift{
+      0%{transform: rotate(0deg) scale(1);}
+      50%{transform: rotate(180deg) scale(1.2);}
+      100%{transform: rotate(360deg) scale(1);}
     }
-    .btn:hover { background: #0055c9; }
-    .btn-secondary { background: #5e5ce6; }
-    .btn-secondary:hover { background: #3b3af2; }
-    .btn-danger { background: #ff3b30; }
-    .btn-danger:hover { background: #c22a1e; }
-    .btn-warning { background: #ff9500; }
-    .btn-warning:hover { background: #c67000; }
-    .btn-success { background: #32d74b; }
-    .btn-success:hover { background: #28a234; }
-    .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
-    .table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 0.5rem;
+    .container{max-width:1200px; margin:0 auto; padding:24px;}
+    .hidden{display:none !important;}
+    .grid{display:grid; gap:16px;}
+    .grid-2{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .grid-3{grid-template-columns:repeat(3,minmax(0,1fr));}
+    .grid-4{grid-template-columns:repeat(4,minmax(0,1fr));}
+    @media (max-width:960px){ .grid-3,.grid-4{grid-template-columns:1fr} .grid-2{grid-template-columns:1fr}}
+    .card{
+      background: linear-gradient(135deg, #ffffff10, #ffffff05);
+      border:1px solid var(--glass-brd);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius:18px; padding:18px; box-shadow: 0 10px 30px #0006;
     }
-    .table th, .table td {
-      border: 1px solid #d1d1d6;
-      padding: 0.6rem;
-      text-align: left;
+    .panel-title{font-weight:700; letter-spacing:0.2px; margin:0 0 12px 0}
+    .muted{color:var(--muted)}
+    #main-nav{
+      background:linear-gradient(180deg, #ffffff15, #ffffff08);
+      border-bottom:1px solid var(--glass-brd);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      position:sticky; top:0; z-index:50;
     }
-    .table th { background: #f5f5f7; }
-    .label-inline { margin-left: 0.5rem; }
-    .form-control {
-      width: 100%;
-      padding: 0.5rem;
-      border: 1px solid #d1d1d6;
-      border-radius: 4px;
-      font-size: 0.9rem;
+    .nav-inner{display:flex; align-items:center; gap:12px; padding:12px 24px; flex-wrap:wrap}
+    .tabs{display:flex; gap:8px; flex-wrap:wrap}
+    .flex-1{flex:1 1 320px}
+    .tab-btn{
+      background:#ffffff12; border:1px solid #ffffff2a; color:var(--txt); padding:10px 14px; border-radius:12px; cursor:pointer;
+      transition: transform .12s ease, box-shadow .12s ease, background .2s ease;
     }
-    .form-group {
-      margin-bottom: 0.5rem;
+    .tab-btn:hover{transform:translateY(-1px); box-shadow:0 6px 16px #0005}
+    .brand{font-weight:800; letter-spacing:.5px; margin-right:8px}
+    .btn{
+      background:linear-gradient(180deg,#ffffff22,#ffffff10);
+      border:1px solid #ffffff33; color:var(--txt); border-radius:12px; padding:10px 14px; cursor:pointer;
+      transition: transform .08s ease, box-shadow .12s ease, filter .2s ease;
     }
-    .form-group label {
-      display: block;
-      margin-bottom: 0.25rem;
-      font-weight: 600;
+    .btn:hover{transform:translateY(-1px); box-shadow:0 8px 16px #0006}
+    .btn:active{transform:scale(.98)}
+    .btn-sm{padding:6px 10px; border-radius:10px; font-size:.9rem}
+    .btn-secondary{background:linear-gradient(180deg,#8ddcff33,#55e7ff22)}
+    .btn-success{background:linear-gradient(180deg,#72e7a644,#72e7a622); border-color:#72e7a688}
+    .btn-warning{background:linear-gradient(180deg,#ffc85744,#ffc85722); border-color:#ffc85788}
+    .btn-danger{background:linear-gradient(180deg,#ff6b6b55,#ff6b6b22); border-color:#ff6b6b88}
+    .ml-1{margin-left:6px}
+    input, select, textarea{
+      width:100%; background:#ffffff0f; border:1px solid #ffffff2a; color:var(--txt);
+      padding:10px 12px; border-radius:12px; outline:none; transition: box-shadow .15s ease, border-color .15s ease;
     }
-    .heading {
-      margin: 0 0 1rem 0;
-      color: #1d1d1f;
+    input:focus, select:focus, textarea:focus{ box-shadow:0 0 0 3px #6ee7ff55; border-color:#6ee7ff88 }
+    label{display:block; font-size:.9rem; color:var(--muted); margin:6px 0 6px}
+    .pill{display:inline-block; font-size:.8rem; padding:3px 8px; border-radius:999px; border:1px solid #ffffff35; background:#ffffff18}
+    .pill.hot{background:#ff6b6b26; border-color:#ff6b6b55}
+    .pill.active{background:#72e7a626; border-color:#72e7a688}
+    .pill.overdue{background:#ff6b6b26; border-color:#ff6b6b99}
+    .pill.due{background:#ffc85726; border-color:#ffc85788}
+    .pill.note{background:#6ee7ff26; border-color:#6ee7ff88}
+    .table{width:100%; border-collapse: collapse; overflow:hidden; border-radius:14px}
+    .table thead th{background:#ffffff18; border-bottom:1px solid #ffffff2a; padding:10px; text-align:left}
+    .table tbody td{padding:10px; border-bottom:1px solid #ffffff14}
+    .table tr:hover td{background:#ffffff08}
+    .alert-banner{width:100%; text-align:center; padding:10px 12px; border-bottom:1px solid #ffffff2a; background:#ffc85718; color:#ffd88c; display:none;}
+    .alert-banner.show{display:block}
+    .alert-banner.danger{background:#ff6b6b22; color:#ffc4c4}
+    .modal-overlay{position:fixed; inset:0; background:#0008; display:flex; align-items:center; justify-content:center; z-index:200;}
+    .modal{ width:min(640px, 92vw); }
+    .section{padding:24px}
+    .subheading{margin:8px 0}
+    .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+    .row > .col{flex:1 1 240px}
+    .right{margin-left:auto}
+    .spacer{height:12px}
+    .login-wrap{min-height:100dvh; display:grid; place-items:center; padding:24px}
+    .logo{font-weight:800; font-size:28px; letter-spacing:.6px}
+
+    /* ===== Force dark select popup + readable headers (safety net) ===== */
+    html { color-scheme: dark; }
+
+    /* Closed select (keeps your glass look and custom arrow) */
+    select,
+    #operation-select {
+      appearance:none; -webkit-appearance:none; -moz-appearance:none;
+      background-color:#ffffff0f;
+      color:var(--txt);
+      border:1px solid #ffffff2a;
+      border-radius:12px;
+      padding-right:2.2rem;
+      background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%23a8b3cf'><path d='M7 10l5 5 5-5z'/></svg>");
+      background-repeat:no-repeat;
+      background-position:right 12px center;
     }
-    .subheading {
-      margin: 0 0 0.75rem 0;
-      color: #1d1d1f;
+    select:focus,
+    #operation-select:focus{
+      outline:none;
+      box-shadow:0 0 0 3px #6ee7ff55;
+      border-color:#6ee7ff88;
+    }
+    select::-ms-expand{ display:none; }
+
+    /* Open listbox rows (Chromium/Firefox) */
+    select option,
+    select optgroup,
+    #operation-select option,
+    #operation-select optgroup{
+      background-color:#0c1420;
+      color:#e6eef6;
+    }
+    select option:hover,
+    #operation-select option:hover{
+      background-color:#1a2c44;
+      color:#fff;
+    }
+    select option:checked, select option:active,
+    #operation-select option:checked, #operation-select option:active{
+      background-color:#16324a;
+      color:#fff;
+    }
+    select option:disabled,
+    #operation-select option:disabled{
+      color:#7a8da3;
+      background-color:#0c1420;
     }
 
-    /* Modal styles */
-    #edit-log-modal {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 1000;
-    }
-    #edit-log-modal .modal-content {
-      background: white;
-      padding: 2rem;
-      border-radius: 8px;
-      min-width: 400px;
-      max-width: 90%;
-    }
-    #edit-log-modal .modal-actions {
-      margin-top: 1rem;
-      text-align: right;
-    }
+    /* Enforce strong header contrast on all tables */
+    .table thead tr { background:#0f1a2e !important; }
+    .table thead th { color:#eaf2ff !important; }
 
-    /* Group delete styles */
-    .group-delete-controls {
-      background: #fff3cd;
-      border: 1px solid #ffeaa7;
-      border-radius: 6px;
-      padding: 1rem;
-      margin: 1rem 0;
+    /* =========================
+       UI PATCH — Buttons & Tabs
+       (match .action-btn to .btn)
+       ========================= */
+    .btn,
+    .action-btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+      padding:10px 14px; font-weight:700; font-size:.95rem; line-height:1;
+      border:1px solid #ffffff33; border-radius:12px;
+      cursor:pointer; user-select:none;
+      color:var(--txt);
+      background:linear-gradient(180deg,#ffffff22,#ffffff10);
+      transition:transform .06s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+      box-shadow:0 1px 2px rgba(0,0,0,.15);
+      min-height:38px;
     }
-    .log-checkbox {
-      margin-right: 0.5rem;
+    .btn:hover, .action-btn:hover{ transform:translateY(-1px); box-shadow:0 8px 16px #0006; }
+    .btn:active, .action-btn:active{ transform:scale(.98); }
+    .btn-sm, .table .btn, .table .action-btn{
+      padding:6px 10px; font-size:.9rem; border-radius:10px; min-height:32px;
     }
-
-    /* Prevent details collapse on button clicks */
-    .log-actions {
-      display: inline-block;
+    /* Map legacy variants */
+    .action-btn.delete{
+      background:linear-gradient(180deg,#ff6b6b55,#ff6b6b22);
+      border-color:#ff6b6b88; color:var(--txt);
     }
-    .log-actions button {
-      margin: 0 0.2rem;
+    .action-btn.edit{
+      background:linear-gradient(180deg,#8ddcff33,#55e7ff22);
+      border-color:#6bbce688; color:var(--txt);
     }
-    
-    /* Prevent event bubbling on table cells with buttons */
-    .table td {
-      position: relative;
+    /* Tabs adopt same sizing */
+    .tab-btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:10px 14px; border-radius:12px; font-weight:700;
+      background:#ffffff12; border:1px solid #ffffff2a; color:var(--txt);
+      transition:transform .06s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
     }
-    
-    .table td .log-actions,
-    .table td .btn,
-    .table td .log-checkbox {
-      pointer-events: auto;
+    .tab-btn:hover{ transform:translateY(-1px); box-shadow:0 6px 16px #0005; }
+    .tab-btn[aria-selected="true"]{
+      background:linear-gradient(180deg,#8ddcff33,#55e7ff22);
+      border-color:#6bbce688;
     }
-    
-    /* Ensure buttons don't trigger details toggle */
-    details table {
-      pointer-events: auto;
-    }
-    
-    details table td {
-      pointer-events: auto;
-    }
-    
-    /* Make sure checkboxes work properly */
-    .log-checkbox {
-      pointer-events: auto;
-      cursor: pointer;
-    }
-
-    @media (max-width: 768px) {
-      .flex-row { flex-direction: column; }
-      .flex-row > div { width: 100% !important; margin-right: 0 !important; margin-bottom: 0.5rem; }
-      .table, .table thead, .table tbody, .table th, .table td, .table tr {
-        display: block;
-      }
-      .table tr {
-        margin-bottom: 0.75rem;
-      }
-      .table td {
-        padding-left: 50%;
-        position: relative;
-      }
-      .table td::before {
-        position: absolute;
-        left: 1rem;
-        width: 45%;
-        white-space: nowrap;
-        font-weight: 600;
-      }
-    }
+    /* Right-align Actions col (balance) */
+    .table thead th:last-child,
+    .table tbody td:last-child{ text-align:right; white-space:nowrap; }
   </style>
 </head>
 <body>
-  <!-- LOGIN SECTION -->
-  <div id="login-section" class="section">
-    <h2 class="heading">Sign In</h2>
-    <div class="form-group">
-      <label for="username">Username (Employee ID)</label>
-      <input id="username" type="text" placeholder="Enter your username" autocomplete="username" class="form-control" />
-    </div>
-    <div class="form-group">
-      <label for="pin">PIN</label>
-      <input id="pin" type="password" placeholder="Enter your 4-digit PIN" autocomplete="current-password" maxlength="4" class="form-control" />
-    </div>
-    <button id="login-btn" class="btn">Login</button>
-  </div>
 
-  <!-- WORKER DASHBOARD -->
-  <div id="worker-section" class="section hidden">
-    <button id="return-admin-btn" class="btn btn-secondary hidden mb-2">← Return to Admin</button>
-
-    <div class="flex-row space-between align-center mb-2">
-      <h2 class="heading">Worker Dashboard</h2>
-      <div class="flex-row align-center">
-        <span>Welcome, <strong id="worker-name"></strong></span>
-        <button id="logout-worker" class="btn btn-danger ml-1">Logout</button>
+  <!-- =================== Login =================== -->
+  <section id="login-section" class="login-wrap">
+    <div class="card" style="width:min(520px,92vw)">
+      <div class="row" style="justify-content:space-between">
+        <div class="logo">SC Deburring</div>
+        <div class="muted">Kinetic Glass • Focused Flow</div>
       </div>
-    </div>
-
-    <!-- Current Operation Panel -->
-    <div id="current-operation-section" class="subsection hidden">
-      <h3 class="subheading">Current Operation</h3>
-      <p>Job: <span id="current-op-jobinfo"></span></p>
-      <p>Operation: <span id="current-op-name"></span></p>
-      <p>Started at: <span id="current-op-start"></span></p>
-      <p>Elapsed: <span id="current-op-elapsed">00:00:00</span></p>
-      <button id="pause-operation-btn" class="btn btn-warning">Pause</button>
-      <button id="resume-operation-btn" class="btn btn-success hidden">Resume</button>
-      <button id="stop-operation-btn" class="btn btn-danger">Stop Operation</button>
-    </div>
-
-    <!-- Live Activity Panel -->
-    <div id="live-activity-section" class="subsection hidden">
-      <h3 class="subheading">Live Activity</h3>
-      <ul id="live-activity-list" style="list-style: none; padding-left: 0;"></ul>
-    </div>
-
-    <!-- Active Jobs Table -->
-    <div class="subsection">
-      <h3 class="subheading">Active Jobs</h3>
-      <button id="refresh-jobs-btn" class="btn btn-secondary mb-1">Refresh Jobs</button>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Job ID</th><th>PO</th><th>Part #</th><th>Qty</th>
-            <th>Received</th><th>Due</th><th>Hot</th><th>Active</th>
-          </tr>
-        </thead>
-        <tbody id="worker-jobs-tbody"></tbody>
-      </table>
-    </div>
-
-    <!-- Operation Selection Panel -->
-    <div id="operation-section" class="subsection hidden">
-      <h3 class="subheading">Select Operation for Job <span id="op-job-id"></span></h3>
-      <div class="form-group">
-        <label for="operation-select">Operation</label>
-        <select id="operation-select" class="form-control"></select>
-      </div>
-      <button id="start-operation-btn" class="btn">Start Operation</button>
-      <button id="cancel-operation-btn" class="btn btn-secondary ml-1">Cancel</button>
-    </div>
-  </div>
-
-  <!-- ADMIN PANEL -->
-  <div id="main-nav" class="section hidden">
-    <div class="flex-row space-between align-center mb-2">
-      <h2 class="heading">Admin Panel</h2>
-      <div class="flex-row align-center">
-        <span>Welcome, <strong id="admin-name"></strong></span>
-        <button id="logout-admin" class="btn btn-danger ml-1">Logout</button>
-      </div>
-    </div>
-
-    <!-- Tab Buttons -->
-    <div class="flex-row mb-3">
-      <button id="tab-dashboard" class="btn btn-secondary mr-1">Dashboard</button>
-      <button id="tab-operations" class="btn btn-secondary mr-1">Operations</button>
-      <button id="tab-employees" class="btn btn-secondary mr-1">Employees</button>
-      <button id="tab-jobs" class="btn btn-secondary mr-1">Jobs</button>
-      <button id="tab-logs" class="btn btn-secondary mr-1">Work Logs</button>
-      <button id="view-worker-dashboard-btn" class="btn btn-warning ml-2">View Worker Dashboard</button>
-    </div>
-
-    <!-- DASHBOARD SECTION -->
-    <div id="section-dashboard" class="subsection hidden">
-      <h3 class="subheading">Key Metrics</h3>
-      <div class="flex-row mb-2">
-        <div style="flex:1; padding:0.5rem; border:1px solid #d1d1d6; border-radius:5px; margin-right:0.5rem; background:#fafafa;">
-          <p><strong>Total Hours Logged Today:</strong> <span id="metric-hours-today">—</span></p>
-          <p><strong>Total Hours Logged This Week:</strong> <span id="metric-hours-week">—</span></p>
+      <div class="spacer"></div>
+      <div class="grid grid-2">
+        <div>
+          <label for="username">Username</label>
+          <input id="username" placeholder="e.g., W001 or A001" autocomplete="username" />
         </div>
-        <div style="flex:1; padding:0.5rem; border:1px solid #d1d1d6; border-radius:5px; margin-right:0.5rem; background:#fafafa;">
-          <p><strong>Avg. Turnaround Time per Job:</strong> <span id="metric-turnaround">—</span></p>
-        </div>
-        <div style="flex:1; padding:0.5rem; border:1px solid #d1d1d6; border-radius:5px; background:#fafafa;">
-          <p><strong>Top 3 Busiest Operators (hrs this wk):</strong></p>
-          <ol id="metric-top-operators" style="margin:0; padding-left:1rem;"></ol>
+        <div>
+          <label for="pin">PIN</label>
+          <input id="pin" type="password" inputmode="numeric" placeholder="4 digits" autocomplete="current-password" />
         </div>
       </div>
-      <h4 class="subheading">"Hours Logged" Trend (Past 7 Days)</h4>
-      <div style="height:300px; margin-top:1rem;">
-        <canvas id="chart-hours-trend"></canvas>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="login-btn" class="btn btn-secondary">Sign In</button>
+        <!-- demo hint removed -->
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== Admin Nav =================== -->
+  <nav id="main-nav" class="hidden">
+    <!-- alert banner will be injected here -->
+    <div class="nav-inner">
+      <div class="brand">Admin: <span id="admin-name"></span></div>
+
+      <!-- Conversational Search (AI) -->
+      <div class="row flex-1">
+        <input id="ai-query-input" placeholder='Ask: "work by John last week", "hot orders due next 7 days", "behind estimated hours", …'>
+        <button id="btn-ai-query" class="btn btn-secondary btn-sm">Run</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button id="tab-dashboard"  class="tab-btn" aria-selected="true">Dashboard</button>
+        <button id="tab-operations" class="tab-btn">Operations</button>
+        <button id="tab-employees"  class="tab-btn">Employees</button>
+        <button id="tab-jobs"       class="tab-btn">Jobs</button>
+        <button id="tab-logs"       class="tab-btn">Logs</button>
+      </div>
+
+      <div class="row">
+        <button id="view-worker-dashboard-btn" class="btn btn-secondary btn-sm">View Worker</button>
+        <button id="logout-admin" class="btn btn-danger btn-sm">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- =================== Worker =================== -->
+  <section id="worker-section" class="hidden section container">
+    <!-- alert banner injected here -->
+    <div class="row" style="gap:10px; margin-bottom:12px;">
+      <h2 class="panel-title" style="margin:0;">Worker: <span id="worker-name"></span></h2>
+      <div class="right row">
+        <button id="refresh-jobs-btn" class="btn btn-secondary btn-sm">Refresh</button>
+        <button id="return-admin-btn" class="btn btn-warning btn-sm hidden">Return to Admin</button>
+        <button id="logout-worker" class="btn btn-danger btn-sm">Logout</button>
       </div>
     </div>
 
-    <!-- OPERATIONS SECTION -->
-    <div id="section-operations" class="subsection hidden">
-      <h3 class="subheading">Operations Management</h3>
-      <div class="form-group">
-        <label for="new-op-name">Operation Name</label>
-        <input id="new-op-name" type="text" placeholder="Enter operation name" class="form-control" />
+    <!-- Current Operation -->
+    <div id="current-operation-section" class="card hidden">
+      <h3 class="panel-title">Current Operation</h3>
+      <div class="grid grid-4">
+        <div><div class="muted">Job</div><div id="current-op-jobinfo">—</div></div>
+        <div><div class="muted">Operation</div><div id="current-op-name">—</div></div>
+        <div><div class="muted">Started</div><div id="current-op-start">—</div></div>
+        <div><div class="muted">Elapsed</div><div id="current-op-elapsed">00:00:00</div></div>
       </div>
-      <button id="create-op-btn" class="btn mb-2">Add Operation</button>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="pause-operation-btn"  class="btn btn-warning">Pause</button>
+        <button id="resume-operation-btn" class="btn btn-secondary hidden">Resume</button>
+        <button id="stop-operation-btn"   class="btn btn-danger">Stop</button>
+      </div>
+    </div>
 
-      <h4 class="subheading">Existing Operations</h4>
+    <!-- Start Operation -->
+    <div id="operation-section" class="card hidden">
+      <h3 class="panel-title">Start Operation</h3>
+      <div class="row" style="gap:12px;">
+        <div><span class="muted">Selected Job:</span> <strong id="op-job-id">—</strong></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="grid grid-2">
+        <div>
+          <label for="operation-select">Operation</label>
+          <select id="operation-select"></select>
+        </div>
+        <div>
+          <label>Notes</label>
+          <div class="card" style="padding:12px; min-height:44px;"><span id="op-job-notes" class="muted">—</span></div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="start-operation-btn" class="btn btn-success">Start</button>
+        <button id="cancel-operation-btn" class="btn btn-danger">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Active Jobs -->
+    <div class="card">
+      <h3 class="panel-title">Active Jobs</h3>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Job</th><th>PO</th><th>Part #</th><th>Qty</th><th>Received</th><th>Due</th><th>Hot</th><th>Active</th>
+            </tr>
+          </thead>
+          <tbody id="worker-jobs-tbody"></tbody>
+        </table>
+      </div>
+      <div class="muted" style="margin-top:8px;">Tip: click a row to start an operation (📝 badge shows notes)</div>
+    </div>
+
+    <!-- Live activity -->
+    <div id="live-activity-section" class="card hidden">
+      <h3 class="panel-title">Live Activity</h3>
+      <ul id="live-activity-list" style="margin:0; padding-left:16px;"></ul>
+    </div>
+  </section>
+
+  <!-- =================== Dashboard =================== -->
+  <section id="section-dashboard" class="hidden section container">
+    <div class="grid grid-4">
+      <div class="card">
+        <div class="muted">Hours Today</div>
+        <div id="metric-hours-today" style="font-size:28px; font-weight:800;">0.00</div>
+      </div>
+      <div class="card">
+        <div class="muted">Hours This Week</div>
+        <div id="metric-hours-week" style="font-size:28px; font-weight:800;">0.00</div>
+      </div>
+      <div class="card">
+        <div class="muted">Average Turnaround</div>
+        <div id="metric-turnaround" style="font-size:24px; font-weight:700;">—</div>
+      </div>
+      <div class="card">
+        <div class="muted">Top Operators (This Week)</div>
+        <ul id="metric-top-operators" style="margin:8px 0 0 18px; padding:0">
+          <li>—</li>
+        </ul>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="card" style="height:360px;">
+      <div class="row">
+        <h3 class="panel-title" style="margin-right:auto;">Hours Trend (This Week)</h3>
+        <button id="btn-daily-briefing" class="btn btn-secondary btn-sm">✨ Get Daily Briefing</button>
+      </div>
+      <div class="spacer"></div>
+      <canvas id="chart-hours-trend" style="width:100%; height:260px;"></canvas>
+      <div id="daily-briefing-output" class="card hidden" style="margin-top:10px; background:#ffffff08;"></div>
+    </div>
+  </section>
+
+  <!-- =================== Operations =================== -->
+  <section id="section-operations" class="hidden section container">
+    <div class="card">
+      <h3 class="panel-title">Create Operation</h3>
+      <div class="row">
+        <div class="col">
+          <label for="new-op-name">Operation Name</label>
+          <input id="new-op-name" placeholder="e.g., Cut, Buff, Pack" />
+        </div>
+        <div class="col" style="align-self:flex-end;">
+          <button id="create-op-btn" class="btn btn-success">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="card">
+      <h3 class="panel-title">Operations</h3>
       <table class="table">
         <thead>
           <tr><th>Operation</th><th>Actions</th></tr>
@@ -323,28 +407,38 @@
         <tbody id="operations-table-body"></tbody>
       </table>
     </div>
+  </section>
 
-    <!-- EMPLOYEES SECTION -->
-    <div id="section-employees" class="subsection hidden">
-      <h3 class="subheading">Employee Management</h3>
-      <div class="form-group">
-        <label for="new-emp-username">Username (Employee ID)</label>
-        <input id="new-emp-username" type="text" placeholder="Enter username" class="form-control" />
+  <!-- =================== Employees =================== -->
+  <section id="section-employees" class="hidden section container">
+    <div class="card">
+      <h3 class="panel-title">Create Employee</h3>
+      <div class="grid grid-4">
+        <div>
+          <label for="new-emp-username">Username</label>
+          <input id="new-emp-username" placeholder="e.g., W003" />
+        </div>
+        <div>
+          <label for="new-emp-pin">PIN (4 digits)</label>
+          <input id="new-emp-pin" inputmode="numeric" maxlength="4" placeholder="1234" />
+        </div>
+        <div>
+          <label for="new-emp-role">Role</label>
+          <select id="new-emp-role">
+            <option value="worker">worker</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <div style="align-self:end">
+          <button id="create-emp-btn" class="btn btn-success">Create</button>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="new-emp-pin">PIN</label>
-        <input id="new-emp-pin" type="password" placeholder="4-digit PIN" maxlength="4" class="form-control" />
-      </div>
-      <div class="form-group">
-        <label for="new-emp-role">Role</label>
-        <select id="new-emp-role" class="form-control">
-          <option value="worker">Worker</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-      <button id="create-emp-btn" class="btn mb-2">Create Employee</button>
+    </div>
 
-      <h4 class="subheading">Existing Employees</h4>
+    <div class="spacer"></div>
+
+    <div class="card">
+      <h3 class="panel-title">Employees</h3>
       <table class="table">
         <thead>
           <tr><th>Username</th><th>Role</th><th>Actions</th></tr>
@@ -352,151 +446,180 @@
         <tbody id="employees-table-body"></tbody>
       </table>
     </div>
+  </section>
 
-    <!-- JOBS SECTION -->
-    <div id="section-jobs" class="subsection hidden">
-      <h3 class="subheading">Job Management</h3>
-
-      <!-- Create Job Form -->
-      <div class="mb-3">
-        <div class="form-group">
-          <label for="new-job-po">PO Number</label>
-          <input id="new-job-po" type="text" placeholder="Enter PO Number" class="form-control" />
+  <!-- =================== Jobs =================== -->
+  <section id="section-jobs" class="hidden section container">
+    <div class="card">
+      <h3 class="panel-title">Search</h3>
+      <div class="grid grid-4">
+        <div><label for="search-po-input">PO</label><input id="search-po-input" placeholder="Filter by PO"></div>
+        <div><label for="search-part-input">Part #</label><input id="search-part-input" placeholder="Filter by part"></div>
+        <div><label for="search-date-from">Received From</label><input id="search-date-from" type="date"></div>
+        <div><label for="search-date-to">Received To</label><input id="search-date-to" type="date"></div>
+        <div><label for="search-due-from">Due From</label><input id="search-due-from" type="date"></div>
+        <div><label for="search-due-to">Due To</label><input id="search-due-to" type="date"></div>
+        <div>
+          <label for="search-hot-select">Hot</label>
+          <select id="search-hot-select">
+            <option value="any">Any</option>
+            <option value="hot">Hot only</option>
+          </select>
         </div>
-        <div class="form-group">
-          <label for="new-job-num">Job Number</label>
-          <input id="new-job-num" type="text" placeholder="Enter Job Number" class="form-control" />
+        <div>
+          <label for="search-status-select">Status</label>
+          <select id="search-status-select">
+            <option value="any">Any</option>
+            <option value="active">Active only</option>
+            <option value="completed">Completed only</option>
+          </select>
         </div>
-        <div class="form-group">
-          <label for="new-job-part">Part Number</label>
-          <input id="new-job-part" type="text" placeholder="Enter Part Number" class="form-control" />
-        </div>
-        <div class="form-group">
-          <label for="new-job-qty">Quantity</label>
-          <input id="new-job-qty" type="number" placeholder="Enter Quantity" class="form-control" />
-        </div>
-        <div class="form-group">
-          <label for="new-job-rec">Received Date</label>
-          <input id="new-job-rec" type="date" class="form-control" />
-        </div>
-        <div class="form-group">
-          <label for="new-job-due">Due Date</label>
-          <input id="new-job-due" type="date" class="form-control" />
-        </div>
-        <div class="form-group">
-          <input id="new-job-hot" type="checkbox" />
-          <label for="new-job-hot" class="label-inline">Hot Order</label>
-        </div>
-        <div class="form-group">
-          <input id="new-job-active" type="checkbox" checked />
-          <label for="new-job-active" class="label-inline">Active</label>
-        </div>
-        <button id="create-job-btn" class="btn">Create Job</button>
       </div>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="search-jobs-btn" class="btn btn-secondary">Search</button>
+        <button id="clear-jobs-btn" class="btn">Clear</button>
+      </div>
+    </div>
 
-      <hr />
+    <div class="spacer"></div>
 
-      <!-- Search / Filter Jobs -->
-      <h4 class="subheading">Search / Filter Jobs</h4>
-      <div class="flex-row mb-2">
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-po-input">Filter by PO</label>
-          <input id="search-po-input" type="text" placeholder="Enter part of PO" class="form-control" />
-        </div>
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-part-input">Filter by Part</label>
-          <input id="search-part-input" type="text" placeholder="Enter part of Part #" class="form-control" />
-        </div>
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-date-from">Received From</label>
-          <input id="search-date-from" type="date" class="form-control" />
-        </div>
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-date-to">Received To</label>
-          <input id="search-date-to" type="date" class="form-control" />
-        </div>
-        <div style="align-self: flex-end;">
-          <button id="search-jobs-btn" class="btn btn-secondary">Search</button>
-          <button id="clear-jobs-btn" class="btn btn-warning ml-1">Clear</button>
+    <div class="card">
+      <h3 class="panel-title">Create Job</h3>
+
+      <!-- Smart Paste (AI Ingestion) -->
+      <div class="card" style="background:#ffffff08;">
+        <label for="smart-paste-input">Smart Paste (client email/text)</label>
+        <textarea id="smart-paste-input" rows="5" placeholder="Paste a whole email or text here…"></textarea>
+        <div class="row" style="margin-top:6px;">
+          <!-- Align IDs to app.js -->
+          <button id="btn-smart-paste-analyze" class="btn btn-secondary btn-sm">✨ Analyze Job</button>
+          <span id="ai-analyze-job-status" class="muted"></span>
         </div>
       </div>
 
-      <!-- Active Jobs -->
-      <h4 class="subheading">Active Jobs</h4>
+      <div class="spacer"></div>
+
+      <div class="grid grid-4">
+        <div><label for="new-job-po">PO</label><input id="new-job-po" placeholder="PO-12345"></div>
+        <div><label for="new-job-num">Job #</label><input id="new-job-num" placeholder="J-00123"></div>
+        <div><label for="new-job-part">Part #</label><input id="new-job-part" placeholder="PN-0001"></div>
+        <div><label for="new-job-qty">Qty</label><input id="new-job-qty" inputmode="numeric" placeholder="100"></div>
+        <div><label for="new-job-rec">Received</label><input id="new-job-rec" type="date"></div>
+        <div><label for="new-job-due">Due</label><input id="new-job-due" type="date"></div>
+        <div>
+          <label>Flags</label>
+          <div class="row">
+            <label style="display:flex; gap:6px; align-items:center"><input id="new-job-hot" type="checkbox"> Hot</label>
+            <label style="display:flex; gap:6px; align-items:center"><input id="new-job-active" type="checkbox" checked> Active</label>
+          </div>
+        </div>
+        <div>
+          <label for="new-job-est">Estimated Hours</label>
+          <input id="new-job-est" inputmode="decimal" placeholder="e.g., 8.5">
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="grid grid-2">
+        <div>
+          <label for="new-job-notes">Notes (raw or cleaned)</label>
+          <textarea id="new-job-notes" rows="5" placeholder="heavy deburr on edges, polish face, watch for scratches"></textarea>
+          <div class="row" style="margin-top:6px;">
+            <button id="btn-clean-notes" class="btn btn-secondary btn-sm">✨ Clean Notes</button>
+            <button id="ai-estimate-hours-btn" class="btn btn-secondary btn-sm">✨ Estimate Hours</button>
+            <button id="btn-job-insights" class="btn btn-secondary btn-sm">✨ Job Insights</button>
+          </div>
+        </div>
+        <div>
+          <label for="new-job-summary">One-sentence Summary</label>
+          <textarea id="new-job-summary" rows="5" placeholder="Perform a heavy deburr on all edges and polish the main face for 50 units..."></textarea>
+          <div class="row" style="margin-top:6px;">
+            <button id="ai-suggest-summary-btn" class="btn btn-secondary btn-sm">✨ Suggest with AI</button>
+          </div>
+          <div id="job-insights-output" class="card hidden" style="margin-top:10px; background:#ffffff08;"></div>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+      <button id="create-job-btn" class="btn btn-success">Create Job</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="card">
+      <h3 class="panel-title">Active Jobs</h3>
       <div id="active-jobs-container"></div>
+      <div class="muted" style="margin-top:8px;">Click QR to open job page for scanning/printing.</div>
+    </div>
 
-      <hr style="margin: 2rem 0;" />
+    <div class="spacer"></div>
 
-      <!-- Completed Jobs -->
-      <h4 class="subheading">Completed Jobs (Grouped by Received Date)</h4>
+    <div class="card">
+      <h3 class="panel-title">Completed Jobs</h3>
       <div id="completed-jobs-container"></div>
     </div>
+  </section>
 
-    <!-- WORK LOGS SECTION -->
-    <div id="section-logs" class="subsection hidden">
-      <h3 class="subheading">Work Logs</h3>
-
-      <!-- Search / Filter Logs -->
-      <div class="flex-row mb-2">
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-logs-po">Filter by PO</label>
-          <input id="search-logs-po" type="text" placeholder="Enter part of PO" class="form-control" />
-        </div>
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-logs-part">Filter by Part</label>
-          <input id="search-logs-part" type="text" placeholder="Enter part of Part #" class="form-control" />
-        </div>
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-logs-date-from">Start Date From</label>
-          <input id="search-logs-date-from" type="date" class="form-control" />
-        </div>
-        <div style="flex:1; margin-right: 0.5rem;">
-          <label for="search-logs-date-to">Start Date To</label>
-          <input id="search-logs-date-to" type="date" class="form-control" />
-        </div>
-        <div style="align-self: flex-end;">
-          <button id="search-logs-btn" class="btn btn-secondary">Search</button>
-          <button id="clear-logs-btn" class="btn btn-warning ml-1">Clear</button>
-        </div>
+  <!-- =================== Logs =================== -->
+  <section id="section-logs" class="hidden section container">
+    <div class="card">
+      <h3 class="panel-title">Search Logs</h3>
+      <div class="grid grid-4">
+        <div><label for="search-logs-po">PO</label><input id="search-logs-po" placeholder="Filter by PO"></div>
+        <div><label for="search-logs-part">Part #</label><input id="search-logs-part" placeholder="Filter by part"></div>
+        <div><label for="search-logs-user">User</label><input id="search-logs-user" placeholder="e.g., W001"></div>
+        <div><label for="search-logs-op">Operation</label><input id="search-logs-op" placeholder="e.g., Cut"></div>
+        <div><label for="search-logs-date-from">From</label><input id="search-logs-date-from" type="date"></div>
+        <div><label for="search-logs-date-to">To</label><input id="search-logs-date-to" type="date"></div>
       </div>
-
-      <!-- Group Delete Controls -->
-      <div id="group-delete-controls" class="group-delete-controls hidden">
-        <h4>Group Delete Selected Logs</h4>
-        <p>Selected: <span id="selected-count">0</span> log entries</p>
-        <button id="delete-selected-btn" class="btn btn-danger">Delete Selected</button>
-        <button id="cancel-selection-btn" class="btn btn-secondary ml-1">Cancel Selection</button>
-        <button id="select-all-visible-btn" class="btn btn-warning ml-1">Select All Visible</button>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="search-logs-btn" class="btn btn-secondary">Search</button>
+        <button id="clear-logs-btn" class="btn">Clear</button>
       </div>
-
-      <div class="mb-2">
-        <button id="enable-group-delete-btn" class="btn btn-warning">Enable Group Delete</button>
-      </div>
-
-      <!-- Logs Container -->
-      <div id="logs-container"></div>
     </div>
-  </div>
 
-  <!-- EDIT LOG MODAL -->
-  <div id="edit-log-modal" class="hidden">
-    <div class="modal-content">
-      <h3>Edit Log Entry</h3>
-      <div class="form-group">
-        <label for="edit-start-input">Start Time</label>
-        <input id="edit-start-input" type="datetime-local" step="1" class="form-control"/>
+    <div class="spacer"></div>
+
+    <div id="logs-container" class="card">
+      <h3 class="panel-title">Work Logs</h3>
+      <!-- Active & Completed logs will render inside -->
+    </div>
+  </section>
+
+  <!-- =================== Edit Log Modal =================== -->
+  <div id="edit-log-modal" class="modal-overlay hidden">
+    <div class="card modal">
+      <h3 class="panel-title">Edit Log</h3>
+      <div class="grid grid-2">
+        <div>
+          <label for="edit-start-input">Start (local)</label>
+          <input id="edit-start-input" type="datetime-local">
+        </div>
+        <div>
+          <label for="edit-end-input">End (local)</label>
+          <input id="edit-end-input" type="datetime-local">
+        </div>
       </div>
-      <div class="form-group">
-        <label for="edit-end-input">End Time</label>
-        <input id="edit-end-input" type="datetime-local" step="1" class="form-control"/>
-      </div>
-      <div class="modal-actions">
-        <button id="save-log-btn" class="btn">Save</button>
-        <button id="cancel-log-btn" class="btn btn-secondary ml-1">Cancel</button>
+      <div class="spacer"></div>
+      <div class="row">
+        <button id="save-log-btn" class="btn btn-success">Save</button>
+        <button id="cancel-log-btn" class="btn btn-danger">Cancel</button>
       </div>
     </div>
   </div>
 
+  <!-- =================== Vendor libs =================== -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+  <!-- Optional: expose Gemini key (for demo only; use a server in production) -->
+  <!-- <script>window.GEMINI_API_KEY = "YOUR_KEY_HERE";</script> -->
+
+  <!-- =================== App =================== -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
+
