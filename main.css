@@ -1,331 +1,285 @@
-/* main.css */
+/* ==========================================================================
+   SC Job Tracker — Polished UI (Dark)
+   - Consistent buttons, strong contrast
+   - Modern tables / forms / modals
+   - Toasts, alerts, pills
+   - Drag handle + focus states
+   ========================================================================== */
 
-/* =====================================================
-   1) Color & Font Variables
-   ===================================================== */
-:root {
-  --color-bg:            #f2f2f5;
-  --color-card:          #ffffff;
-  --color-light:         #fafafb;
-  --color-primary:       #0a84ff;
-  --color-primary-hover: #0055c9;
-  --color-secondary:     #5e5ce6;
-  --color-secondary-hover:#3b3af2;
-  --color-danger:        #ff3b30;
-  --color-danger-hover:  #c22a1e;
-  --color-warning:       #ff9500;
-  --color-warning-hover: #c67000;
-  --color-success:       #32d74b;
-  --color-border:        #d1d1d6;
-  --color-muted:         #6e6e73;
-  --font-base:           "SF Pro Text","Segoe UI",Tahoma,Arial,sans-serif;
-  --font-size-base:      1rem;
-  --radius:              8px;
-  --spacing:             1rem;
-}
-
-/* =====================================================
-   2) Global Reset & Typography
-   ===================================================== */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-html, body {
-  width: 100%;
-  min-height: 100%;
-  background: var(--color-bg);
-  font-family: var(--font-base);
-  font-size: var(--font-size-base);
-  color: #1c1c1e;
-  line-height: 1.6;
-}
-a {
-  color: var(--color-primary);
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
-}
-
-/* =====================================================
-   3) Utility & Layout Classes
-   ===================================================== */
-.hidden        { display: none !important; }
-.text-center   { text-align: center; }
-.flex-row      { display: flex; flex-wrap: wrap; gap: var(--spacing); }
-.space-between { justify-content: space-between; }
-.align-center  { align-items: center; }
-.mt-1          { margin-top: 0.5rem; }
-.mt-2          { margin-top: 1rem; }
-.mb-1          { margin-bottom: 0.5rem; }
-.mb-2          { margin-bottom: 1rem; }
-.mb-3          { margin-bottom: 1.5rem; }
-.ml-2          { margin-left: 0.5rem; }
-
-/* =====================================================
-   4) Button Styles
-   ===================================================== */
-.btn {
-  display: inline-block;
-  padding: 0.6rem 1.2rem;
-  font-size: var(--font-size-base);
-  font-weight: 600;
-  color: #ffffff;
-  background-color: var(--color-primary);
-  border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.1s ease;
-}
-.btn:hover {
-  background-color: var(--color-primary-hover);
-  transform: translateY(-2px);
-}
-.btn:active {
-  transform: translateY(0);
-}
-.btn.btn-secondary {
-  background-color: var(--color-secondary);
-}
-.btn.btn-secondary:hover {
-  background-color: var(--color-secondary-hover);
-}
-.btn.btn-danger {
-  background-color: var(--color-danger);
-}
-.btn.btn-danger:hover {
-  background-color: var(--color-danger-hover);
-}
-.btn.btn-warning {
-  background-color: var(--color-warning);
-}
-.btn.btn-warning:hover {
-  background-color: var(--color-warning-hover);
-}
-.btn.btn-success {
-  background-color: var(--color-success);
-}
-.btn.btn-success:hover {
-  background-color: var(--color-success-hover);
-}
-.btn-block {
-  display: block;
-  width: 100%;
-}
-
-/* =====================================================
-   5) Section Containers
-   ===================================================== */
-.section {
-  background: var(--color-card);
-  margin: var(--spacing) auto;
-  padding: var(--spacing);
-  max-width: 900px;
-  border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-}
-.subsection {
-  background: var(--color-card);
-  padding: 1.5rem;
-  border-radius: var(--radius);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-}
-
-/* =====================================================
-   6) Headings & Text
-   ===================================================== */
-.heading {
-  font-size: 1.75rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-  color: #1c1c1e;
-}
-.subheading {
-  font-size: 1.25rem;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
-  color: var(--color-muted);
-}
-
-/* =====================================================
-   7) Form Controls
-   ===================================================== */
-.form-group {
-  margin-bottom: var(--spacing);
-}
-.form-group label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-weight: 500;
-  color: #2c2c2e;
-}
-input[type="text"],
-input[type="password"],
-input[type="date"],
-input[type="number"],
-select,
-input[type="datetime-local"] {
-  width: 100%;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-light);
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-input:focus, select:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 6px rgba(10,132,255,0.3);
-  outline: none;
-}
-
-/* =====================================================
-   8) Operation Panel Styling (Highlighted Bubble)
-   ===================================================== */
-#operation-section {
-  background: var(--color-card);
-  padding: 2rem;
-  border: 2px solid var(--color-primary);
-  border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(10,132,255,0.15);
-  margin-top: var(--spacing);
-  text-align: center;
-}
-#operation-section .subheading {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--color-primary);
-  margin-bottom: 1rem;
-}
-#operation-section #op-job-id {
-  display: inline-block;
-  background: #ffffff;
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary);
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  border-radius: 999px;
-  box-shadow: 0 2px 6px rgba(10,132,255,0.2);
-  margin-bottom: 1rem;
-}
-#operation-section .form-group {
-  margin-top: 1rem;
-}
-#operation-section .btn {
-  margin: 0 1rem 1rem 0;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
-}
-
-/* =====================================================
-   9) Tables with Stripe & Hover
-   ===================================================== */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: var(--spacing);
-  font-size: 0.95rem;
-}
-th, td {
-  border: 1px solid var(--color-border);
-  padding: 0.75rem;
-  text-align: left;
-}
-thead {
-  background: var(--color-light);
-}
-tbody tr:nth-child(even) {
-  background: rgba(0,0,0,0.02);
-}
-tbody tr:hover {
-  background: rgba(10,132,255,0.05);
-}
-
-/* =====================================================
-   10) QR & Action Buttons in Tables
-   ===================================================== */
-.qr-cell {
-  text-align: center;
-  padding: var(--spacing) 0;
-}
-.qr-cell canvas {
-  display: block;
-  margin: 0 auto 0.5rem;
-}
-.action-btn {
-  display: block;
-  width: 85%;
-  margin: 0.5rem auto;
-  padding: 0.4rem;
-  font-size: 0.9rem;
-  border-radius: var(--radius);
-  color: #fff;
-  cursor: pointer;
-  border: none;
-  transition: opacity 0.2s;
-}
-.action-btn.edit {
-  background-color: var(--color-warning);
-}
-.action-btn.edit:hover {
-  background-color: var(--color-warning-hover);
-}
-.action-btn.delete {
-  background-color: var(--color-danger);
-}
-.action-btn.delete:hover {
-  background-color: var(--color-danger-hover);
-}
-
-/* =====================================================
-   11) Responsive Adjustments
-   ===================================================== */
-@media (max-width: 768px) {
-  .flex-row {
-    flex-direction: column;
-    gap: 0.5rem;
+   :root{
+    --bg: #0b1117;
+    --panel: #0f1720;
+    --surface: #111a25;
+    --surface-2: #0c1420;
+    --muted: #9fb0c3;
+    --text: #e6eef6;
+    --accent: #24a0ed;
+    --accent-2: #00d4ff;
+    --ok: #17c964;
+    --warn: #f5a524;
+    --danger: #f31260;
+    --border: #1e2936;
+    --shadow: 0 8px 24px rgba(0,0,0,.35);
+    --radius: 14px;
+    --radius-sm: 10px;
+    --radius-lg: 18px;
   }
-  table, thead, tbody, th, td, tr {
-    display: block;
+  
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+    color:var(--text);
+    background: radial-gradient(1200px 800px at 70% -200px, rgba(36,160,237,.25), rgba(0,0,0,0)), var(--bg);
   }
-  tr {
-    margin-bottom: 0.75rem;
+  
+  /* Layout helpers */
+  .hidden{ display:none!important; }
+  .container{ width:min(1200px,92vw); margin:24px auto; }
+  .muted{ color:var(--muted); }
+  .ml-1{ margin-left:.25rem; }
+  
+  /* Top nav */
+  #main-nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(11,17,23,.85);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-bottom:1px solid var(--border);
   }
-  td {
-    padding-left: 50%;
-    position: relative;
+  
+  /* Section headings */
+  .section-title{ margin:8px 0 12px; font-size:1.15rem; letter-spacing:.2px; }
+  .subheading{ font-weight:800; letter-spacing:.2px; color:#d7e6f6; margin:.25rem 0 .5rem; }
+  
+  /* Cards */
+  .card{
+    background:linear-gradient(180deg,var(--panel),var(--surface));
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:16px 18px;
   }
-  td::before {
-    position: absolute;
-    left: 1rem;
-    width: 45%;
-    white-space: nowrap;
-    font-weight: 600;
+  .card + .card{ margin-top:16px; }
+  
+  /* ── Buttons (modern, consistent) ────────────────────────────────────────── */
+  .btn,
+  .action-btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+    padding:.55rem .9rem; font-weight:700; font-size:.95rem; line-height:1;
+    border:1px solid var(--border); border-radius:10px;
+    cursor:pointer; user-select:none;
+    color:#eaf4ff; background:#182232;
+    transition:transform .06s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+    box-shadow:0 1px 2px rgba(0,0,0,.15);
   }
-}
-
-/* =====================================================
-   12) Print Styles
-   ===================================================== */
-@media print {
-  body * {
-    visibility: hidden;
+  .btn:hover, .action-btn:hover{ background:#1a2638; border-color:#223144; }
+  .btn:active, .action-btn:active{ transform:translateY(1px); }
+  .btn:focus-visible, .action-btn:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px; box-shadow:0 0 0 4px rgba(36,160,237,.25);
   }
-  .printable-area, .printable-area * {
-    visibility: visible;
+  .btn-sm{ padding:.4rem .7rem; font-size:.85rem; border-radius:9px; }
+  
+  .btn-primary{ background:linear-gradient(135deg,var(--accent),var(--accent-2)); border:none; color:#03121d; }
+  .btn-secondary{ background:#0f1726; color:#e6f0fa; }
+  .btn-success{ background:linear-gradient(135deg,#12c27d,#17c964); border:none; color:#02130b; }
+  .btn-warning{ background:linear-gradient(135deg,#f39c12,#f5a524); border:none; color:#1a1208; }
+  .btn-danger, .action-btn.delete{ background:linear-gradient(135deg,#c91c65,#e44886); border:none; color:#16030b; }
+  .action-btn.edit{ background:linear-gradient(135deg,#f39c12,#f5a524); border:none; color:#1a1208; }
+  .action-btn.edit:hover{ filter:brightness(1.05); }
+  
+  /* Icon-only buttons (if any) */
+  .btn-icon{ padding:.45rem; width:34px; height:34px; }
+  
+  /* ── Inputs / selects / textarea ─────────────────────────────────────────── */
+  input[type="text"], input[type="number"], input[type="date"], input[type="datetime-local"],
+  select, textarea{
+    width:100%; padding:.6rem .9rem;
+    color:var(--text); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:10px; outline:none;
   }
-  .printable-area {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    padding: 0;
-    margin: 0;
+  input::placeholder, textarea::placeholder{ color:#89a0b8; }
+  textarea{ min-height:96px; resize:vertical; }
+  label{ color:var(--muted); font-size:.9rem; display:block; margin:0 0 .35rem; }
+  
+  input:focus, textarea:focus, select:focus{
+    border-color:#2e4c6a; box-shadow:0 0 0 3px rgba(36,160,237,.25);
   }
-  @page {
-    size: A4 portrait;
-    margin: 0.5cm;
+  
+  /* Custom select arrow (closed state) */
+  select{
+    appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%239fb0c3'><path d='M7 10l5 5 5-5z'/></svg>");
+    background-repeat:no-repeat;
+    background-position:right 12px center;
+    padding-right:2.2rem;
   }
-}
+  
+  /* ── Tables ──────────────────────────────────────────────────────────────── */
+  .table{
+    width:100%; border-collapse:collapse; overflow:hidden;
+    background:linear-gradient(180deg,#0f1720,#0e1620);
+    border:1px solid var(--border); border-radius:var(--radius);
+  }
+  .table thead tr{ background:#0b121b; }      /* strong dark header */
+  .table thead th{
+    text-align:left; font-weight:800; font-size:.86rem; letter-spacing:.2px;
+    color:#e3f1ff; padding:.8rem .9rem; border-bottom:1px solid var(--border);
+    vertical-align:middle;
+  }
+  .table tbody td{
+    padding:.75rem .9rem; border-bottom:1px solid #152234; color:#e8f2fb; vertical-align:middle;
+  }
+  .table tbody tr:hover{ background:#0d1622; }
+  .table tbody tr:last-child td{ border-bottom:none; }
+  
+  /* Action cell: keep buttons on one line */
+  .table td:last-child{ white-space:nowrap; }
+  
+  /* Make buttons tidy/identical inside tables */
+  .table .btn,
+  .table .action-btn{
+    padding:6px 10px; min-height:32px; font-size:.85rem; border-radius:8px;
+    margin-left:6px; vertical-align:middle;
+  }
+  .table td > .btn:first-child,
+  .table td > .action-btn:first-child{ margin-left:0; }
+  
+  /* ── Status pills ───────────────────────────────────────────────────────── */
+  .pill{
+    display:inline-flex; align-items:center; gap:.4rem;
+    padding:.25rem .5rem; border-radius:999px; font-size:.78rem; font-weight:800;
+  }
+  .pill.hot{ background:rgba(245,165,36,.14); color:#ffd07a; border:1px solid rgba(245,165,36,.35); }
+  .pill.overdue{ background:rgba(243,17,96,.14); color:#ff94b7; border:1px solid rgba(243,17,96,.35); }
+  .pill.due{ background:rgba(36,160,237,.14); color:#99d9ff; border:1px solid rgba(36,160,237,.35); }
+  .pill.active{ background:rgba(23,201,100,.14); color:#7ff0b8; border:1px solid rgba(23,201,100,.35); }
+  
+  /* ── Grid helpers ───────────────────────────────────────────────────────── */
+  .grid{ display:grid; gap:16px; }
+  .grid-2{ grid-template-columns:1fr 1fr; }
+  .grid-3{ grid-template-columns:repeat(3,1fr); }
+  @media (max-width:940px){ .grid-2, .grid-3{ grid-template-columns:1fr; } }
+  
+  /* ── Alerts / toasts ────────────────────────────────────────────────────── */
+  .alerts-panel{
+    display:block; background:linear-gradient(180deg,#0c141e,#0c141e);
+    border:1px solid var(--border); border-radius:var(--radius); padding:10px 12px;
+  }
+  .alerts-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:4px 2px 8px; color:#cfe7ff; font-weight:800; letter-spacing:.3px;
+  }
+  .alert-list{ list-style:none; margin:0; padding:0; }
+  .alert-item{
+    display:flex; gap:.6rem; align-items:flex-start;
+    padding:.55rem .65rem; border-radius:10px; margin:.25rem 0;
+    border:1px solid #142132; background:#0c1420;
+  }
+  .alert-item .tag{ white-space:nowrap; }
+  .alert-item.warn{ border-color:rgba(245,165,36,.35); background:rgba(245,165,36,.08); }
+  .alert-item.danger{ border-color:rgba(243,18,96,.4); background:rgba(243,18,96,.08); }
+  .alert-empty{ color:var(--muted); padding:.4rem .2rem; }
+  
+  #toast-container{
+    position:fixed; right:16px; bottom:16px; z-index:2000;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .toast{
+    min-width:260px; max-width:360px;
+    background:#0c1420; border:1px solid var(--border);
+    color:var(--text); box-shadow:var(--shadow);
+    border-left:4px solid var(--accent);
+    padding:12px 14px; border-radius:12px; animation:toastIn .18s ease-out;
+  }
+  .toast.warn{ border-left-color:var(--warn); }
+  .toast.danger{ border-left-color:var(--danger); }
+  .toast.ok{ border-left-color:var(--ok); }
+  .toast-title{ font-weight:800; margin-bottom:2px; }
+  .toast small{ color:var(--muted); }
+  @keyframes toastIn{ from{ transform:translateY(8px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+  
+  /* Charts */
+  .chart-wrap{ height:260px; }
+  
+  /* Details / accordions */
+  details{
+    background:linear-gradient(180deg,#0c141e,#0c141e);
+    border:1px solid var(--border); border-radius:var(--radius);
+    padding:8px 10px; margin:8px 0;
+  }
+  summary{ cursor:pointer; outline:none; user-select:none; font-weight:800; color:#d7e6f6; }
+  
+  /* Modal */
+  .modal{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.4); z-index:100;
+  }
+  .modal .modal-body{
+    width:min(700px,92vw);
+    background:linear-gradient(180deg,var(--panel),var(--surface));
+    border:1px solid var(--border); border-radius:var(--radius-lg);
+    box-shadow:var(--shadow); padding:16px 18px;
+  }
+  .modal .row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .modal .actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+  
+  /* Small helpers */
+  hr.div{ border:none; height:1px; background:var(--border); margin:10px 0; }
+  kbd{ background:#0b121b; padding:.1rem .35rem; border:1px solid var(--border); border-radius:6px; color:#cfe7ff; }
+  
+  /* Worker header chips */
+  .header-chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .header-chip{ background:#0b121b; border:1px solid var(--border); padding:.35rem .6rem; border-radius:999px; color:#bcd; font-weight:800; }
+  
+  /* QR cell */
+  .qr-cell{ text-align:center; }
+  .qr-cell canvas{ border-radius:8px; background:#0b121b; padding:6px; border:1px solid var(--border); }
+  .qr-cell button{ margin-top:.4rem; }
+  
+  /* Drag handle for operations list */
+  .drag-handle{
+    cursor:grab; user-select:none; margin-right:.5rem;
+    color:#94a3b8; font-size:18px; line-height:1;
+  }
+  tr.dragging{ opacity:.6; }
+  
+  /* Scrollbar (nice in dark) */
+  *::-webkit-scrollbar{ width:10px; height:10px; }
+  *::-webkit-scrollbar-thumb{ background:#122033; border-radius:10px; border:2px solid #0b1217; }
+  *::-webkit-scrollbar-track{ background:#0b1217; }
+  
+  /* ======================================================================
+     Force dark <select> popups (listbox) for Chromium/Firefox + better states
+     ====================================================================== */
+  html { color-scheme: dark; } /* hint UAs to use dark form controls */
+  
+  select option,
+  select optgroup{
+    background-color:#0c1420;
+    color:#e6eef6;
+  }
+  select option:disabled{
+    color:#7a8da3;
+    background-color:#0c1420;
+  }
+  select option:hover{
+    background-color:#1a2c44;
+    color:#ffffff;
+  }
+  select option:checked,
+  select option:active{
+    background-color:#16324a;
+    color:#ffffff;
+  }
+  
+  /* Focus ring on the control */
+  select:focus{
+    border-color:#2e4c6a;
+    box-shadow:0 0 0 3px rgba(36,160,237,.28);
+  }
+  
+  /* Hide legacy IE arrow (harmless elsewhere) */
+  select::-ms-expand{ display:none; }
+  
